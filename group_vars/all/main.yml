@@ -1,0 +1,49 @@
+---
+# Non-secret defaults. Override via -e, vars files, or Ansible Vault.
+
+# Lifecycle operation: deploy | destroy
+lifecycle_action: deploy
+
+# OpenShift release version (exact or z-stream, e.g. 4.16.30)
+ocp_version: ""
+
+# Cluster topology: sno | ha | compact
+cluster_type: ha
+
+# Cloud platform: aws (implemented) | azure | gcp (roadmap stubs)
+platform: aws
+
+# Provisioning method: ipi (implemented) | upi (roadmap stub)
+provisioner: ipi
+
+# Cluster identity
+cluster_name: ""
+base_domain: ""
+
+# Work directory for install-config, metadata, and auth (kubeconfig)
+# Default: ./clusters/<cluster_name>
+cluster_dir: ""
+
+# Credential / secret file paths (do not commit the files themselves)
+pull_secret_file: ""
+ssh_public_key_file: "~/.ssh/id_rsa.pub"
+
+# AWS
+aws_region: eu-west-1
+aws_profile: ""
+# Prefer env AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY, or aws_profile above
+
+# Installer binary cache
+installer_cache_dir: "{{ lookup('env', 'HOME') }}/.cache/ocp-cluster-lifecycle"
+
+# Topology replica map (overridable)
+cluster_topology:
+  sno:
+    control_plane_replicas: 1
+    compute_replicas: 0
+  compact:
+    control_plane_replicas: 3
+    compute_replicas: 0
+  ha:
+    control_plane_replicas: 3
+    compute_replicas: 2

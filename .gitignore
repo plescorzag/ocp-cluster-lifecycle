@@ -1,0 +1,28 @@
+# Secrets and vault
+group_vars/all/vault.yml
+*.vault
+vault.yml
+pull-secret*.json
+**/pull-secret.json
+
+# AWS / cloud credentials that must never be committed
+.env
+.env.*
+*.pem
+*.key
+!*.pub
+
+# Cluster workdirs (install-config copies, auth, metadata)
+clusters/*
+!clusters/.gitkeep
+
+# Ansible
+*.retry
+.ansible/
+
+# Installer / editor junk
+.DS_Store
+*.log
+__pycache__/
+.idea/
+.vscode/

@@ -1,0 +1,24 @@
+---
+# Example extra-vars file. Copy and fill in real values.
+# Usage:
+#   ansible-playbook playbooks/deploy.yml -e @vars/my-cluster.yml
+#
+# Do NOT commit files that contain real secrets or absolute paths to secrets
+# you do not want shared.
+
+lifecycle_action: deploy
+ocp_version: "4.16.30"
+cluster_type: ha
+platform: aws
+provisioner: ipi
+
+cluster_name: demo
+base_domain: example.com
+aws_region: eu-west-1
+
+# Paths on the machine running the playbook
+pull_secret_file: "~/pull-secret.json"
+ssh_public_key_file: "~/.ssh/id_rsa.pub"
+
+# Use a named AWS CLI profile, or rely on env credentials
+aws_profile: default

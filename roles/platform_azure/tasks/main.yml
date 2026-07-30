@@ -1,0 +1,8 @@
+---
+- name: Azure platform is not implemented
+  ansible.builtin.fail:
+    msg: >-
+      platform=azure is on the roadmap but not implemented yet.
+      Use platform=aws with provisioner=ipi for now.
+      Planned: Azure IPI install-config generation and credential checks,
+      then UPI support.

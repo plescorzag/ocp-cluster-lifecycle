@@ -1,0 +1,47 @@
+---
+- name: Validate AWS variables for deploy
+  when: lifecycle_action == 'deploy'
+  ansible.builtin.assert:
+    that:
+      - aws_region | length > 0
+      - base_domain | length > 0
+    fail_msg: "AWS deploy requires aws_region and base_domain"
+
+- name: Check AWS credentials (profile or environment)
+  when: lifecycle_action == 'deploy'
+  block:
+    - name: Probe AWS identity
+      ansible.builtin.command:
+        argv: "{{ ['aws', 'sts', 'get-caller-identity'] + (['--profile', aws_profile] if (aws_profile | length > 0) else []) }}"
+      register: _aws_identity
+      changed_when: false
+      failed_when: false
+
+    - name: Assert AWS credentials work
+      ansible.builtin.assert:
+        that:
+          - _aws_identity.rc == 0
+        fail_msg: >-
+          AWS credentials are not available. Set aws_profile or export
+          AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY (and ensure the aws CLI is installed).
+          Detail: {{ _aws_identity.stderr | default(_aws_identity.stdout) }}
+
+- name: Render install-config.yaml for AWS IPI
+  when: lifecycle_action == 'deploy'
+  ansible.builtin.template:
+    src: install-config.yaml.j2
+    dest: "{{ cluster_dir }}/install-config.yaml"
+    mode: "0600"
+
+- name: Confirm metadata.json exists for destroy
+  when: lifecycle_action == 'destroy'
+  ansible.builtin.stat:
+    path: "{{ cluster_dir }}/metadata.json"
+  register: _aws_metadata
+
+- name: Fail destroy without metadata
+  when: lifecycle_action == 'destroy' and not _aws_metadata.stat.exists
+  ansible.builtin.fail:
+    msg: >-
+      Cannot destroy: {{ cluster_dir }}/metadata.json not found.
+      Point cluster_dir (or cluster_name) at the directory used during deploy.

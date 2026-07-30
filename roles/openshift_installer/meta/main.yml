@@ -1,0 +1,6 @@
+---
+galaxy_info:
+  role_name: openshift_installer
+  description: Download and cache openshift-install for the detected OS
+  license: Apache-2.0
+dependencies: []

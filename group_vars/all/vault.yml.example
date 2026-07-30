@@ -1,0 +1,14 @@
+---
+# Copy to vault.yml and encrypt with:
+#   ansible-vault create group_vars/all/vault.yml
+# or:
+#   cp group_vars/all/vault.yml.example group_vars/all/vault.yml
+#   ansible-vault encrypt group_vars/all/vault.yml
+#
+# Example secret variables (paths are preferred over embedding secrets):
+
+# pull_secret_file: /secure/path/pull-secret.json
+# ssh_public_key_file: /secure/path/id_rsa.pub
+# aws_profile: my-ocp-profile
+# AWS_ACCESS_KEY_ID: "AKIA..."
+# AWS_SECRET_ACCESS_KEY: "..."

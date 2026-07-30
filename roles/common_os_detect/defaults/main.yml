@@ -1,0 +1,6 @@
+---
+# Maps ansible facts to installer OS labels: linux | mac | windows
+host_os: ""
+host_arch: ""
+installer_os: ""
+installer_arch: ""

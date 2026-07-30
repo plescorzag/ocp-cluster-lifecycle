@@ -1,0 +1,28 @@
+---
+- name: Detect controller operating system
+  ansible.builtin.set_fact:
+    host_os: >-
+      {{
+        'windows' if ansible_system == 'Win32NT' or ansible_os_family == 'Windows'
+        else ('mac' if ansible_system == 'Darwin' else 'linux')
+      }}
+    host_arch: "{{ ansible_architecture }}"
+
+- name: Map architecture for openshift-install downloads
+  ansible.builtin.set_fact:
+    installer_arch: >-
+      {{
+        'arm64' if host_arch in ['aarch64', 'arm64'] else 'amd64'
+      }}
+
+- name: Map OS label for openshift-install downloads
+  ansible.builtin.set_fact:
+    installer_os: >-
+      {{
+        'windows' if host_os == 'windows'
+        else ('mac' if host_os == 'mac' else 'linux')
+      }}
+
+- name: Show detected controller OS
+  ansible.builtin.debug:
+    msg: "Detected OS={{ host_os }} arch={{ host_arch }} (installer {{ installer_os }}-{{ installer_arch }})"

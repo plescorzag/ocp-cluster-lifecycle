@@ -1,0 +1,6 @@
+---
+galaxy_info:
+  role_name: provisioner_ipi
+  description: Create and destroy clusters with openshift-install IPI
+  license: Apache-2.0
+dependencies: []

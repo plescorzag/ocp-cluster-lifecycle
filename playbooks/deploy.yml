@@ -1,0 +1,5 @@
+---
+- name: Deploy OpenShift cluster
+  ansible.builtin.import_playbook: site.yml
+  vars:
+    lifecycle_action: deploy

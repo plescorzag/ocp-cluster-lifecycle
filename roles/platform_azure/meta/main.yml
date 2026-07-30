@@ -1,0 +1,6 @@
+---
+galaxy_info:
+  role_name: platform_azure
+  description: Stub for future Azure platform support
+  license: Apache-2.0
+dependencies: []

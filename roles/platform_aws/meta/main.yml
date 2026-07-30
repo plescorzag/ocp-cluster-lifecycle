@@ -1,0 +1,6 @@
+---
+galaxy_info:
+  role_name: platform_aws
+  description: AWS IPI install-config and credential checks
+  license: Apache-2.0
+dependencies: []

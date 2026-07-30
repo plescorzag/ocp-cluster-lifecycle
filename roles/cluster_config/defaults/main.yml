@@ -1,0 +1,5 @@
+---
+control_plane_replicas: 3
+compute_replicas: 2
+pull_secret: ""
+ssh_public_key: ""

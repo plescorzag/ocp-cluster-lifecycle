@@ -1,0 +1,78 @@
+---
+- name: Require ocp_version and OS detection facts
+  ansible.builtin.assert:
+    that:
+      - ocp_version | length > 0
+      - installer_os is defined
+      - installer_arch is defined
+    fail_msg: "ocp_version and common_os_detect facts (installer_os/installer_arch) are required"
+
+- name: Map mirror client arch path
+  ansible.builtin.set_fact:
+    _mirror_arch: "{{ 'aarch64' if installer_arch == 'arm64' else 'x86_64' }}"
+
+- name: Resolve installer archive name
+  ansible.builtin.set_fact:
+    _installer_archive: >-
+      {{
+        'openshift-install-windows.zip' if installer_os == 'windows'
+        else (
+          'openshift-install-mac-arm64.tar.gz' if (installer_os == 'mac' and installer_arch == 'arm64')
+          else (
+            'openshift-install-mac.tar.gz' if installer_os == 'mac'
+            else 'openshift-install-linux.tar.gz'
+          )
+        )
+      }}
+    _installer_binary_name: "{{ 'openshift-install.exe' if installer_os == 'windows' else 'openshift-install' }}"
+    _installer_version_dir: "{{ installer_cache_dir }}/{{ ocp_version }}/{{ installer_os }}-{{ installer_arch }}"
+
+- name: Set openshift-install binary path
+  ansible.builtin.set_fact:
+    openshift_install_bin: "{{ _installer_version_dir }}/{{ _installer_binary_name }}"
+    _installer_url: >-
+      {{ openshift_mirror_base }}/{{ _mirror_arch }}/clients/ocp/{{ ocp_version }}/{{ _installer_archive }}
+
+- name: Ensure installer cache directory exists
+  ansible.builtin.file:
+    path: "{{ _installer_version_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Check for cached openshift-install
+  ansible.builtin.stat:
+    path: "{{ openshift_install_bin }}"
+  register: _installer_stat
+
+- name: Download openshift-install archive
+  when: not _installer_stat.stat.exists
+  block:
+    - name: Fetch installer archive
+      ansible.builtin.get_url:
+        url: "{{ _installer_url }}"
+        dest: "{{ _installer_version_dir }}/{{ _installer_archive }}"
+        mode: "0644"
+      retries: 3
+      delay: 5
+
+    - name: Extract installer archive
+      ansible.builtin.unarchive:
+        src: "{{ _installer_version_dir }}/{{ _installer_archive }}"
+        dest: "{{ _installer_version_dir }}"
+        remote_src: true
+
+    - name: Ensure installer is executable
+      ansible.builtin.file:
+        path: "{{ openshift_install_bin }}"
+        mode: "0755"
+      when: installer_os != 'windows'
+
+- name: Verify openshift-install binary
+  ansible.builtin.command:
+    cmd: "{{ openshift_install_bin }} version"
+  register: _installer_version
+  changed_when: false
+
+- name: Show installer version
+  ansible.builtin.debug:
+    msg: "{{ _installer_version.stdout_lines | default([_installer_version.stdout]) }}"

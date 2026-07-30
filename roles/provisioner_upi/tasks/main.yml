@@ -1,0 +1,7 @@
+---
+- name: UPI provisioner is not implemented
+  ansible.builtin.fail:
+    msg: >-
+      provisioner=upi is on the roadmap but not implemented yet.
+      Use provisioner=ipi (default) for AWS today.
+      Planned: platform-specific UPI workflows for AWS, Azure, and GCP.

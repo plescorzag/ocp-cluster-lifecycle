@@ -1,0 +1,8 @@
+---
+- name: GCP platform is not implemented
+  ansible.builtin.fail:
+    msg: >-
+      platform=gcp is on the roadmap but not implemented yet.
+      Use platform=aws with provisioner=ipi for now.
+      Planned: GCP IPI install-config generation and credential checks,
+      then UPI support.

@@ -1,0 +1,6 @@
+---
+galaxy_info:
+  role_name: common_os_detect
+  description: Detect Linux, macOS, or Windows on the Ansible controller
+  license: Apache-2.0
+dependencies: []

@@ -1,0 +1,61 @@
+---
+# Entry playbook: set lifecycle_action=deploy|destroy via -e or vars file.
+# Prefer playbooks/deploy.yml or playbooks/destroy.yml for clarity.
+- name: OpenShift cluster lifecycle
+  hosts: localhost
+  gather_facts: true
+  vars:
+    lifecycle_action: "{{ lifecycle_action | default('deploy') }}"
+  pre_tasks:
+    - name: Validate lifecycle_action
+      ansible.builtin.assert:
+        that:
+          - lifecycle_action in ['deploy', 'destroy']
+        fail_msg: "lifecycle_action must be 'deploy' or 'destroy' (got '{{ lifecycle_action }}')"
+
+    - name: Validate required common variables
+      ansible.builtin.assert:
+        that:
+          - ocp_version | length > 0
+          - cluster_type in ['sno', 'ha', 'compact']
+          - platform in ['aws', 'azure', 'gcp']
+          - provisioner in ['ipi', 'upi']
+          - cluster_name | length > 0
+        fail_msg: >-
+          Provide ocp_version, cluster_type (sno|ha|compact), platform (aws|azure|gcp),
+          provisioner (ipi|upi), and cluster_name.
+
+    - name: Resolve cluster work directory
+      ansible.builtin.set_fact:
+        cluster_dir: "{{ cluster_dir if (cluster_dir | default('') | length > 0) else ((playbook_dir + '/../clusters/' + cluster_name) | expanduser) }}"
+
+  roles:
+    - role: common_os_detect
+    - role: openshift_installer
+    - role: cluster_config
+
+  tasks:
+    - name: Fail if UPI is requested (roadmap)
+      ansible.builtin.include_role:
+        name: provisioner_upi
+      when: provisioner == 'upi'
+
+    - name: Include AWS platform tasks
+      ansible.builtin.include_role:
+        name: platform_aws
+      when: platform == 'aws' and provisioner == 'ipi'
+
+    - name: Include Azure platform tasks (stub)
+      ansible.builtin.include_role:
+        name: platform_azure
+      when: platform == 'azure'
+
+    - name: Include GCP platform tasks (stub)
+      ansible.builtin.include_role:
+        name: platform_gcp
+      when: platform == 'gcp'
+
+    - name: Run IPI provisioner
+      ansible.builtin.include_role:
+        name: provisioner_ipi
+      when: provisioner == 'ipi' and platform == 'aws'

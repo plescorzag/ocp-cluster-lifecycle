@@ -1,0 +1,57 @@
+---
+- name: Validate cluster_type
+  ansible.builtin.assert:
+    that:
+      - cluster_type in cluster_topology
+    fail_msg: "Unknown cluster_type '{{ cluster_type }}'. Use sno, ha, or compact."
+
+- name: Apply topology replicas
+  ansible.builtin.set_fact:
+    control_plane_replicas: "{{ cluster_topology[cluster_type].control_plane_replicas }}"
+    compute_replicas: "{{ cluster_topology[cluster_type].compute_replicas }}"
+
+- name: Expand secret file paths
+  ansible.builtin.set_fact:
+    pull_secret_file_abs: "{{ pull_secret_file | expanduser }}"
+    ssh_public_key_file_abs: "{{ ssh_public_key_file | expanduser }}"
+
+- name: Require pull secret and SSH key for deploy
+  when: lifecycle_action == 'deploy'
+  block:
+    - name: Assert credential paths are set
+      ansible.builtin.assert:
+        that:
+          - pull_secret_file | length > 0
+          - ssh_public_key_file | length > 0
+          - base_domain | length > 0
+        fail_msg: "deploy requires pull_secret_file, ssh_public_key_file, and base_domain"
+
+    - name: Read pull secret
+      ansible.builtin.slurp:
+        src: "{{ pull_secret_file_abs }}"
+      register: _pull_secret_slurp
+      no_log: true
+
+    - name: Read SSH public key
+      ansible.builtin.slurp:
+        src: "{{ ssh_public_key_file_abs }}"
+      register: _ssh_key_slurp
+
+    - name: Set secret facts
+      ansible.builtin.set_fact:
+        pull_secret: "{{ _pull_secret_slurp.content | b64decode | trim }}"
+        ssh_public_key: "{{ _ssh_key_slurp.content | b64decode | trim }}"
+      no_log: true
+
+- name: Ensure cluster work directory exists
+  ansible.builtin.file:
+    path: "{{ cluster_dir }}"
+    state: directory
+    mode: "0700"
+
+- name: Show cluster topology
+  ansible.builtin.debug:
+    msg: >-
+      cluster={{ cluster_name }} type={{ cluster_type }}
+      controlPlane={{ control_plane_replicas }} compute={{ compute_replicas }}
+      dir={{ cluster_dir }}

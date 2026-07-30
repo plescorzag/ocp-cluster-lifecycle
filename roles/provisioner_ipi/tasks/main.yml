@@ -1,0 +1,52 @@
+---
+- name: Require openshift-install binary and cluster_dir
+  ansible.builtin.assert:
+    that:
+      - openshift_install_bin is defined
+      - openshift_install_bin | length > 0
+      - cluster_dir is defined
+      - cluster_dir | length > 0
+    fail_msg: "openshift_install_bin and cluster_dir must be set before IPI provisioner runs"
+
+- name: Set AWS profile environment for installer
+  ansible.builtin.set_fact:
+    _ipi_env: >-
+      {{
+        {'AWS_PROFILE': aws_profile} if (aws_profile is defined and aws_profile | length > 0) else {}
+      }}
+
+- name: Deploy cluster with openshift-install (IPI)
+  when: lifecycle_action == 'deploy'
+  ansible.builtin.command:
+    cmd: >-
+      {{ openshift_install_bin }} create cluster
+      --dir {{ cluster_dir }}
+      --log-level={{ openshift_install_log_level }}
+  environment: "{{ _ipi_env }}"
+  register: _ipi_create
+  async: 7200
+  poll: 30
+
+- name: Show kubeconfig location after deploy
+  when: lifecycle_action == 'deploy'
+  ansible.builtin.debug:
+    msg: >-
+      Cluster deploy finished. kubeconfig: {{ cluster_dir }}/auth/kubeconfig
+      Console credentials: {{ cluster_dir }}/auth/kubeadmin-password
+
+- name: Destroy cluster with openshift-install (IPI)
+  when: lifecycle_action == 'destroy'
+  ansible.builtin.command:
+    cmd: >-
+      {{ openshift_install_bin }} destroy cluster
+      --dir {{ cluster_dir }}
+      --log-level={{ openshift_install_log_level }}
+  environment: "{{ _ipi_env }}"
+  register: _ipi_destroy
+  async: 3600
+  poll: 30
+
+- name: Show destroy completion
+  when: lifecycle_action == 'destroy'
+  ansible.builtin.debug:
+    msg: "Cluster destroy finished for dir {{ cluster_dir }}"
