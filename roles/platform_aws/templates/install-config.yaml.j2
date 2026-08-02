@@ -1,6 +1,8 @@
 apiVersion: v1
 baseDomain: {{ base_domain }}
-credentialsMode: {{ aws_credentials_mode }}
+{% if _aws_credentials_mode_effective | length > 0 %}
+credentialsMode: {{ _aws_credentials_mode_effective }}
+{% endif %}
 metadata:
   name: {{ cluster_name }}
 platform:

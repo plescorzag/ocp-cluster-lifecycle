@@ -36,9 +36,9 @@ aws_architecture: x86_64
 # Optional explicit instance types (override architecture defaults)
 aws_control_plane_instance_type: ""
 aws_compute_instance_type: ""
-# AWS credentials mode for install-config: Passthrough | Manual | Mint
-# Passthrough is required for AWS SSO / LoginProvider temporary credentials.
-aws_credentials_mode: Passthrough
+# AWS credentials mode for install-config: auto | Passthrough | Manual | Mint
+# auto (default): SSO -> Passthrough; ~/.aws/credentials or env keys -> Mint
+aws_credentials_mode: auto
 
 # Release payload for openshift-install. Empty = derive from aws_architecture.
 # Needed when the installer binary arch (e.g. Mac arm64) differs from node arch (x86_64).

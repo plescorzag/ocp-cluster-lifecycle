@@ -9,8 +9,8 @@
 - name: Validate AWS credentials mode
   ansible.builtin.assert:
     that:
-      - aws_credentials_mode in ['Passthrough', 'Manual', 'Mint']
-    fail_msg: "aws_credentials_mode must be Passthrough, Manual, or Mint (got '{{ aws_credentials_mode }}')"
+      - aws_credentials_mode in ['auto', 'Passthrough', 'Manual', 'Mint']
+    fail_msg: "aws_credentials_mode must be auto, Passthrough, Manual, or Mint (got '{{ aws_credentials_mode }}')"
 
 - name: Resolve AWS instance types from architecture
   ansible.builtin.set_fact:
@@ -55,6 +55,77 @@
           AWS credentials are not available. Set aws_profile or export
           AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY (and ensure the aws CLI is installed).
           Detail: {{ _aws_identity.stderr | default(_aws_identity.stdout) }}
+
+    # Detect SSO vs static keys so both ~/.aws/credentials (Mint) and SSO (Passthrough) work
+    - name: Detect AWS SSO configuration for profile
+      when: aws_credentials_mode == 'auto'
+      ansible.builtin.shell: |
+        set -e
+        profile="{{ aws_profile | default('') }}"
+        if [ -n "${AWS_PROFILE:-}" ] && [ -z "$profile" ]; then
+          profile="$AWS_PROFILE"
+        fi
+        if [ -n "$profile" ]; then
+          if aws configure get sso_start_url --profile "$profile" 2>/dev/null | grep -q .; then
+            echo sso
+            exit 0
+          fi
+          if aws configure get sso_session --profile "$profile" 2>/dev/null | grep -q .; then
+            echo sso
+            exit 0
+          fi
+          if aws configure get credential_process --profile "$profile" 2>/dev/null | grep -qi 'sso\|login'; then
+            echo sso
+            exit 0
+          fi
+        fi
+        # LoginProvider / SSO session often exposes a session token without long-lived keys in credentials file
+        if aws configure export-credentials {{ '--profile ' ~ aws_profile if (aws_profile | length > 0) else '' }} --format env 2>/dev/null | grep -q '^export AWS_SESSION_TOKEN='; then
+          # Prefer credentials file static keys when access key is present in credentials file for this profile
+          creds_file="${AWS_SHARED_CREDENTIALS_FILE:-$HOME/.aws/credentials}"
+          if [ -n "$profile" ] && [ -f "$creds_file" ] && grep -q "^\[${profile}\]" "$creds_file"; then
+            echo static
+            exit 0
+          fi
+          echo sso
+          exit 0
+        fi
+        echo static
+      args:
+        executable: /bin/bash
+      register: _aws_cred_source
+      changed_when: false
+      failed_when: false
+
+    - name: Resolve effective credentialsMode
+      ansible.builtin.set_fact:
+        # Empty effective value omits credentialsMode from install-config (= installer Mint default)
+        _aws_credentials_mode_effective: >-
+          {{
+            '' if aws_credentials_mode == 'Mint'
+            else (
+              aws_credentials_mode if aws_credentials_mode in ['Passthrough', 'Manual']
+              else (
+                'Passthrough'
+                if (aws_credentials_mode == 'auto' and (_aws_cred_source.stdout | default('static') | trim) == 'sso')
+                else ''
+              )
+            )
+          }}
+
+    - name: Show selected AWS credentials mode
+      ansible.builtin.debug:
+        msg: >-
+          aws_credentials_mode={{ aws_credentials_mode }}
+          detected={{ _aws_cred_source.stdout | default('n/a') | trim }}
+          effective={{ _aws_credentials_mode_effective if (_aws_credentials_mode_effective | length > 0) else 'Mint' }}
+          (static ~/.aws/credentials or env keys -> Mint;
+          AWS SSO / LoginProvider -> Passthrough)
+
+- name: Ensure credentials mode fact exists for destroy path
+  when: ocp_lifecycle != 'deploy'
+  ansible.builtin.set_fact:
+    _aws_credentials_mode_effective: ""
 
 - name: Show selected AWS machine types
   when: ocp_lifecycle == 'deploy'
