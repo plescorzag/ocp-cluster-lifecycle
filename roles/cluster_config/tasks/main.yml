@@ -44,6 +44,20 @@
         ssh_public_key: "{{ _ssh_key_slurp.content | b64decode | trim }}"
       no_log: true
 
+    - name: Reject SSH private keys in ssh_public_key_file
+      ansible.builtin.assert:
+        that:
+          - "'BEGIN OPENSSH PRIVATE KEY' not in ssh_public_key"
+          - "'BEGIN RSA PRIVATE KEY' not in ssh_public_key"
+          - "'BEGIN EC PRIVATE KEY' not in ssh_public_key"
+          - "'BEGIN DSA PRIVATE KEY' not in ssh_public_key"
+          - ssh_public_key is regex('^(ssh-(rsa|ed25519|dss)|ecdsa-sha2-nistp[0-9]+)\\s+\\S+')
+        fail_msg: >-
+          ssh_public_key_file must point to a PUBLIC key (.pub), not a private key.
+          Current file: {{ ssh_public_key_file_abs }}
+          Expected content like: ssh-ed25519 AAAA... comment  or  ssh-rsa AAAA... comment
+          Tip: use ~/.ssh/id_ed25519.pub or ~/.ssh/id_rsa.pub
+
 - name: Ensure cluster work directory exists
   ansible.builtin.file:
     path: "{{ cluster_dir }}"

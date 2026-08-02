@@ -29,6 +29,7 @@ aws_architecture: x86_64
 
 # Paths on the machine running the playbook
 pull_secret_file: "~/pull-secret.json"
+# Must be the PUBLIC key (.pub), never the private key
 ssh_public_key_file: "~/.ssh/id_rsa.pub"
 
 # Use a named AWS CLI profile, or rely on env credentials
