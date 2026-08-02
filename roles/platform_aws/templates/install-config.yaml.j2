@@ -7,8 +7,7 @@ platform:
     region: {{ aws_region }}
 publish: External
 pullSecret: {{ (pull_secret_b64 | b64decode | trim) | to_json }}
-sshKey: |
-  {{ ssh_public_key }}
+sshKey: {{ ssh_public_key | trim | to_json }}
 controlPlane:
   architecture: {{ _aws_install_architecture }}
   hyperthreading: Enabled

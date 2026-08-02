@@ -61,10 +61,41 @@
 
 - name: Render install-config.yaml for AWS IPI
   when: ocp_lifecycle == 'deploy'
-  ansible.builtin.template:
-    src: install-config.yaml.j2
-    dest: "{{ cluster_dir }}/install-config.yaml"
-    mode: "0600"
+  block:
+    - name: Remove stale install-config before rendering
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ cluster_dir }}/install-config.yaml"
+        - "{{ cluster_dir }}/install-config.yaml.backup"
+
+    - name: Render install-config.yaml
+      ansible.builtin.template:
+        src: install-config.yaml.j2
+        dest: "{{ cluster_dir }}/install-config.yaml"
+        mode: "0600"
+
+    - name: Validate install-config.yaml parses as YAML
+      ansible.builtin.slurp:
+        src: "{{ cluster_dir }}/install-config.yaml"
+      register: _install_config_slurp
+      no_log: true
+
+    - name: Parse install-config.yaml
+      ansible.builtin.set_fact:
+        _install_config_parsed: "{{ _install_config_slurp.content | b64decode | from_yaml }}"
+      no_log: true
+
+    - name: Assert required install-config string fields
+      ansible.builtin.assert:
+        that:
+          - _install_config_parsed.pullSecret is string
+          - _install_config_parsed.sshKey is string
+          - _install_config_parsed.sshKey | length > 0
+        fail_msg: >-
+          install-config.yaml is invalid after render (pullSecret/sshKey must be strings).
+          Check ssh_public_key_file and pull_secret_file contents.
 
 - name: Confirm metadata.json exists for destroy
   when: ocp_lifecycle == 'destroy'
