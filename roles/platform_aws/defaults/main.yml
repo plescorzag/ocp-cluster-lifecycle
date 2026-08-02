@@ -4,6 +4,8 @@ aws_profile: ""
 aws_architecture: x86_64
 aws_control_plane_instance_type: ""
 aws_compute_instance_type: ""
+# Mint fails with AWS SSO / LoginProvider; Passthrough works for SSO and static keys
+aws_credentials_mode: Passthrough
 
 # Default EC2 types per architecture (used when explicit types are empty)
 aws_instance_types:

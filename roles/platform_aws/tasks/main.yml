@@ -6,6 +6,12 @@
       - aws_architecture in aws_instance_types
     fail_msg: "aws_architecture must be 'x86_64' or 'arm64' (got '{{ aws_architecture }}')"
 
+- name: Validate AWS credentials mode
+  ansible.builtin.assert:
+    that:
+      - aws_credentials_mode in ['Passthrough', 'Manual', 'Mint']
+    fail_msg: "aws_credentials_mode must be Passthrough, Manual, or Mint (got '{{ aws_credentials_mode }}')"
+
 - name: Resolve AWS instance types from architecture
   ansible.builtin.set_fact:
     # install-config uses amd64/arm64; aws_architecture uses x86_64/arm64

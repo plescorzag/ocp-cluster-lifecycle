@@ -34,3 +34,5 @@ ssh_public_key_file: "~/.ssh/id_rsa.pub"
 
 # Use a named AWS CLI profile, or rely on env credentials
 aws_profile: default
+# Passthrough: needed for AWS SSO (LoginProvider). Mint only works with long-lived IAM keys.
+aws_credentials_mode: Passthrough
