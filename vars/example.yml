@@ -2,11 +2,14 @@
 # Example extra-vars file. Copy and fill in real values.
 # Usage:
 #   ansible-playbook playbooks/deploy.yml -e @vars/my-cluster.yml
+#   ansible-playbook playbooks/destroy.yml -e @vars/my-cluster.yml
 #
 # Do NOT commit files that contain real secrets or absolute paths to secrets
 # you do not want shared.
+#
+# Do NOT set ocp_lifecycle / lifecycle_action here — -e vars would override destroy.
+# Choose deploy vs destroy by which playbook you run.
 
-lifecycle_action: deploy
 ocp_version: "4.16.30"
 cluster_type: ha
 platform: aws
@@ -15,6 +18,14 @@ provisioner: ipi
 cluster_name: demo
 base_domain: example.com
 aws_region: eu-west-1
+
+# Node architecture: x86_64 (default) | arm64
+aws_architecture: x86_64
+# Optional overrides (otherwise derived from aws_architecture):
+# aws_control_plane_instance_type: m6i.xlarge
+# aws_compute_instance_type: m6i.xlarge
+# Optional release payload override (default derives from aws_architecture):
+# openshift_release_image: quay.io/openshift-release-dev/ocp-release:4.22.6-x86_64
 
 # Paths on the machine running the playbook
 pull_secret_file: "~/pull-secret.json"

@@ -1,9 +1,6 @@
 ---
 # Non-secret defaults. Override via -e, vars files, or Ansible Vault.
 
-# Lifecycle operation: deploy | destroy
-lifecycle_action: deploy
-
 # OpenShift release version (exact or z-stream, e.g. 4.16.30)
 ocp_version: ""
 
@@ -32,6 +29,18 @@ ssh_public_key_file: "~/.ssh/id_rsa.pub"
 aws_region: eu-west-1
 aws_profile: ""
 # Prefer env AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY, or aws_profile above
+#
+# Node CPU architecture for AWS EC2 instances: x86_64 (default) | arm64
+# Quay and many RH operators require x86_64 / amd64 images.
+aws_architecture: x86_64
+# Optional explicit instance types (override architecture defaults)
+aws_control_plane_instance_type: ""
+aws_compute_instance_type: ""
+
+# Release payload for openshift-install. Empty = derive from aws_architecture.
+# Needed when the installer binary arch (e.g. Mac arm64) differs from node arch (x86_64).
+# Example: quay.io/openshift-release-dev/ocp-release:4.22.6-x86_64
+openshift_release_image: ""
 
 # Installer binary cache
 installer_cache_dir: "{{ lookup('env', 'HOME') }}/.cache/ocp-cluster-lifecycle"

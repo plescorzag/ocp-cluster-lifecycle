@@ -4,49 +4,87 @@
     that:
       - openshift_install_bin is defined
       - openshift_install_bin | length > 0
+      - openshift_install_cmd is defined
+      - openshift_install_cmd | length > 0
       - cluster_dir is defined
       - cluster_dir | length > 0
-    fail_msg: "openshift_install_bin and cluster_dir must be set before IPI provisioner runs"
+    fail_msg: "openshift_install_bin/cmd and cluster_dir must be set before IPI provisioner runs"
 
-- name: Set AWS profile environment for installer
+- name: Resolve OpenShift release image for target node architecture
+  ansible.builtin.set_fact:
+    # Image tags use x86_64 / aarch64 (not amd64 / arm64)
+    _openshift_release_image: >-
+      {{
+        openshift_release_image
+        if (openshift_release_image | default('') | length > 0)
+        else (
+          openshift_release_image_repo ~ ':' ~ ocp_version ~ '-' ~ (
+            'x86_64' if (aws_architecture | default('x86_64')) == 'x86_64' else 'aarch64'
+          )
+        )
+      }}
+
+- name: Build installer environment
   ansible.builtin.set_fact:
     _ipi_env: >-
       {{
-        {'AWS_PROFILE': aws_profile} if (aws_profile is defined and aws_profile | length > 0) else {}
+        {
+          'OPENSHIFT_INSTALL_RELEASE_IMAGE_OVERRIDE': _openshift_release_image
+        }
+        | combine(
+            {'AWS_PROFILE': aws_profile}
+            if (aws_profile is defined and aws_profile | length > 0)
+            else {}
+          )
       }}
 
+- name: Show release image override
+  ansible.builtin.debug:
+    msg: >-
+      OPENSHIFT_INSTALL_RELEASE_IMAGE_OVERRIDE={{ _openshift_release_image }}
+      (installer host may differ from cluster node architecture)
+
+- name: Check for leftover installer state before deploy
+  when: ocp_lifecycle == 'deploy'
+  ansible.builtin.stat:
+    path: "{{ cluster_dir }}/metadata.json"
+  register: _ipi_existing_metadata
+
+- name: Fail deploy if cluster artifacts already exist
+  when: ocp_lifecycle == 'deploy' and _ipi_existing_metadata.stat.exists
+  ansible.builtin.fail:
+    msg: >-
+      Installer artifacts already exist in {{ cluster_dir }} (metadata.json found).
+      Run destroy first:
+        ansible-playbook playbooks/destroy.yml -e @vars/my-cluster.yml
+      Then re-run deploy.
+
 - name: Deploy cluster with openshift-install (IPI)
-  when: lifecycle_action == 'deploy'
+  when: ocp_lifecycle == 'deploy'
   ansible.builtin.command:
-    cmd: >-
-      {{ openshift_install_bin }} create cluster
-      --dir {{ cluster_dir }}
-      --log-level={{ openshift_install_log_level }}
+    argv: "{{ openshift_install_cmd + ['create', 'cluster', '--dir', cluster_dir, '--log-level=' + openshift_install_log_level] }}"
   environment: "{{ _ipi_env }}"
   register: _ipi_create
   async: 7200
   poll: 30
 
 - name: Show kubeconfig location after deploy
-  when: lifecycle_action == 'deploy'
+  when: ocp_lifecycle == 'deploy'
   ansible.builtin.debug:
     msg: >-
       Cluster deploy finished. kubeconfig: {{ cluster_dir }}/auth/kubeconfig
       Console credentials: {{ cluster_dir }}/auth/kubeadmin-password
 
 - name: Destroy cluster with openshift-install (IPI)
-  when: lifecycle_action == 'destroy'
+  when: ocp_lifecycle == 'destroy'
   ansible.builtin.command:
-    cmd: >-
-      {{ openshift_install_bin }} destroy cluster
-      --dir {{ cluster_dir }}
-      --log-level={{ openshift_install_log_level }}
+    argv: "{{ openshift_install_cmd + ['destroy', 'cluster', '--dir', cluster_dir, '--log-level=' + openshift_install_log_level] }}"
   environment: "{{ _ipi_env }}"
   register: _ipi_destroy
   async: 3600
   poll: 30
 
 - name: Show destroy completion
-  when: lifecycle_action == 'destroy'
+  when: ocp_lifecycle == 'destroy'
   ansible.builtin.debug:
     msg: "Cluster destroy finished for dir {{ cluster_dir }}"

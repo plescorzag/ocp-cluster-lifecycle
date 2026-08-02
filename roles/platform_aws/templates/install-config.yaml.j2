@@ -6,18 +6,24 @@ platform:
   aws:
     region: {{ aws_region }}
 publish: External
-pullSecret: {{ pull_secret | to_json }}
+pullSecret: {{ (pull_secret_b64 | b64decode | trim) | to_json }}
 sshKey: |
   {{ ssh_public_key }}
 controlPlane:
+  architecture: {{ _aws_install_architecture }}
   hyperthreading: Enabled
   name: master
-  platform: {}
+  platform:
+    aws:
+      type: {{ _aws_control_plane_type }}
   replicas: {{ control_plane_replicas | int }}
 compute:
-  - hyperthreading: Enabled
+  - architecture: {{ _aws_install_architecture }}
+    hyperthreading: Enabled
     name: worker
-    platform: {}
+    platform:
+      aws:
+        type: {{ _aws_compute_type }}
     replicas: {{ compute_replicas | int }}
 networking:
   networkType: OVNKubernetes

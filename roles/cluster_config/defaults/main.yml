@@ -1,5 +1,5 @@
 ---
 control_plane_replicas: 3
 compute_replicas: 2
-pull_secret: ""
+pull_secret_b64: ""
 ssh_public_key: ""

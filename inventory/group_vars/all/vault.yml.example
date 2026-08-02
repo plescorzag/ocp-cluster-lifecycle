@@ -1,9 +1,9 @@
 ---
 # Copy to vault.yml and encrypt with:
-#   ansible-vault create group_vars/all/vault.yml
+#   ansible-vault create inventory/group_vars/all/vault.yml
 # or:
-#   cp group_vars/all/vault.yml.example group_vars/all/vault.yml
-#   ansible-vault encrypt group_vars/all/vault.yml
+#   cp inventory/group_vars/all/vault.yml.example inventory/group_vars/all/vault.yml
+#   ansible-vault encrypt inventory/group_vars/all/vault.yml
 #
 # Example secret variables (paths are preferred over embedding secrets):
 

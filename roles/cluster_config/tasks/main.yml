@@ -16,7 +16,7 @@
     ssh_public_key_file_abs: "{{ ssh_public_key_file | expanduser }}"
 
 - name: Require pull secret and SSH key for deploy
-  when: lifecycle_action == 'deploy'
+  when: ocp_lifecycle == 'deploy'
   block:
     - name: Assert credential paths are set
       ansible.builtin.assert:
@@ -39,7 +39,8 @@
 
     - name: Set secret facts
       ansible.builtin.set_fact:
-        pull_secret: "{{ _pull_secret_slurp.content | b64decode | trim }}"
+        # Keep pull secret as base64 so Ansible does not auto-parse JSON into a dict
+        pull_secret_b64: "{{ _pull_secret_slurp.content }}"
         ssh_public_key: "{{ _ssh_key_slurp.content | b64decode | trim }}"
       no_log: true
 

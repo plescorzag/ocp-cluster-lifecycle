@@ -1,2 +1,4 @@
 ---
 openshift_install_log_level: info
+openshift_release_image: ""
+openshift_release_image_repo: "quay.io/openshift-release-dev/ocp-release"

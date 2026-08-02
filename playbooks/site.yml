@@ -1,17 +1,18 @@
 ---
-# Entry playbook: set lifecycle_action=deploy|destroy via -e or vars file.
-# Prefer playbooks/deploy.yml or playbooks/destroy.yml for clarity.
+# Shared lifecycle play. Prefer playbooks/deploy.yml or playbooks/destroy.yml.
+# ocp_lifecycle is set by those entrypoints (do NOT put it in your -e vars file).
 - name: OpenShift cluster lifecycle
   hosts: localhost
   gather_facts: true
-  vars:
-    lifecycle_action: "{{ lifecycle_action | default('deploy') }}"
   pre_tasks:
-    - name: Validate lifecycle_action
+    - name: Validate ocp_lifecycle
       ansible.builtin.assert:
         that:
-          - lifecycle_action in ['deploy', 'destroy']
-        fail_msg: "lifecycle_action must be 'deploy' or 'destroy' (got '{{ lifecycle_action }}')"
+          - ocp_lifecycle is defined
+          - ocp_lifecycle in ['deploy', 'destroy']
+        fail_msg: >-
+          ocp_lifecycle must be 'deploy' or 'destroy'.
+          Use playbooks/deploy.yml or playbooks/destroy.yml (do not set this in your vars file).
 
     - name: Validate required common variables
       ansible.builtin.assert:
@@ -28,6 +29,10 @@
     - name: Resolve cluster work directory
       ansible.builtin.set_fact:
         cluster_dir: "{{ cluster_dir if (cluster_dir | default('') | length > 0) else ((playbook_dir + '/../clusters/' + cluster_name) | expanduser) }}"
+
+    - name: Announce lifecycle action
+      ansible.builtin.debug:
+        msg: "Running ocp_lifecycle={{ ocp_lifecycle }} for cluster={{ cluster_name }} dir={{ cluster_dir }}"
 
   roles:
     - role: common_os_detect

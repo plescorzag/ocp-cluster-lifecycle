@@ -5,29 +5,39 @@
       - ocp_version | length > 0
       - installer_os is defined
       - installer_arch is defined
-    fail_msg: "ocp_version and common_os_detect facts (installer_os/installer_arch) are required"
+      - aws_architecture in ['x86_64', 'arm64']
+    fail_msg: "ocp_version, OS detection facts, and aws_architecture (x86_64|arm64) are required"
 
-- name: Map mirror client arch path
+# Client downloads follow the *cluster* architecture (aws_architecture), not the
+# Mac/Linux host CPU. For x86_64 clusters that means:
+#   https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/<version>/
+- name: Map mirror clients path from cluster architecture
   ansible.builtin.set_fact:
-    _mirror_arch: "{{ 'aarch64' if installer_arch == 'arm64' else 'x86_64' }}"
+    _mirror_arch: "{{ 'x86_64' if aws_architecture == 'x86_64' else 'aarch64' }}"
 
-- name: Resolve installer archive name
+- name: Resolve installer archive name for host OS + cluster architecture
   ansible.builtin.set_fact:
     _installer_archive: >-
       {{
         'openshift-install-windows.zip' if installer_os == 'windows'
         else (
-          'openshift-install-mac-arm64.tar.gz' if (installer_os == 'mac' and installer_arch == 'arm64')
+          'openshift-install-mac-' ~ ocp_version ~ '.tar.gz'
+          if (installer_os == 'mac' and aws_architecture == 'x86_64')
           else (
-            'openshift-install-mac.tar.gz' if installer_os == 'mac'
-            else 'openshift-install-linux.tar.gz'
+            'openshift-install-mac-arm64-' ~ ocp_version ~ '.tar.gz'
+            if (installer_os == 'mac' and aws_architecture == 'arm64')
+            else (
+              'openshift-install-linux.tar.gz' if installer_os == 'linux'
+              else 'openshift-install-mac.tar.gz'
+            )
           )
         )
       }}
     _installer_binary_name: "{{ 'openshift-install.exe' if installer_os == 'windows' else 'openshift-install' }}"
-    _installer_version_dir: "{{ installer_cache_dir }}/{{ ocp_version }}/{{ installer_os }}-{{ installer_arch }}"
+    # Cache key includes cluster arch so arm64/x86_64 binaries are not mixed
+    _installer_version_dir: "{{ installer_cache_dir }}/{{ ocp_version }}/{{ installer_os }}-client-{{ aws_architecture }}"
 
-- name: Set openshift-install binary path
+- name: Set openshift-install binary path and download URL
   ansible.builtin.set_fact:
     openshift_install_bin: "{{ _installer_version_dir }}/{{ _installer_binary_name }}"
     _installer_url: >-
@@ -44,6 +54,15 @@
     path: "{{ openshift_install_bin }}"
   register: _installer_stat
 
+- name: Show installer download source
+  ansible.builtin.debug:
+    msg: >-
+      cluster aws_architecture={{ aws_architecture }}
+      mirror={{ _mirror_arch }}/clients/ocp/{{ ocp_version }}/
+      archive={{ _installer_archive }}
+      url={{ _installer_url }}
+      cached={{ _installer_stat.stat.exists }}
+
 - name: Download openshift-install archive
   when: not _installer_stat.stat.exists
   block:
@@ -55,11 +74,31 @@
       retries: 3
       delay: 5
 
-    - name: Extract installer archive
-      ansible.builtin.unarchive:
-        src: "{{ _installer_version_dir }}/{{ _installer_archive }}"
-        dest: "{{ _installer_version_dir }}"
-        remote_src: true
+    # Use system tar/unzip — ansible.builtin.unarchive requires GNU tar,
+    # which macOS (BSD tar) does not provide by default.
+    - name: Extract tar.gz installer (linux/mac)
+      ansible.builtin.command:
+        argv:
+          - tar
+          - -xzf
+          - "{{ _installer_version_dir }}/{{ _installer_archive }}"
+          - -C
+          - "{{ _installer_version_dir }}"
+      args:
+        creates: "{{ openshift_install_bin }}"
+      when: installer_os != 'windows'
+
+    - name: Extract zip installer (windows)
+      ansible.builtin.command:
+        argv:
+          - unzip
+          - -o
+          - "{{ _installer_version_dir }}/{{ _installer_archive }}"
+          - -d
+          - "{{ _installer_version_dir }}"
+      args:
+        creates: "{{ openshift_install_bin }}"
+      when: installer_os == 'windows'
 
     - name: Ensure installer is executable
       ansible.builtin.file:
@@ -67,9 +106,19 @@
         mode: "0755"
       when: installer_os != 'windows'
 
+# x86_64 mac binary on Apple Silicon needs Rosetta (arch -x86_64)
+- name: Build openshift-install command prefix
+  ansible.builtin.set_fact:
+    openshift_install_cmd: >-
+      {{
+        ['arch', '-x86_64', openshift_install_bin]
+        if (installer_os == 'mac' and installer_arch == 'arm64' and aws_architecture == 'x86_64')
+        else [openshift_install_bin]
+      }}
+
 - name: Verify openshift-install binary
   ansible.builtin.command:
-    cmd: "{{ openshift_install_bin }} version"
+    argv: "{{ openshift_install_cmd + ['version'] }}"
   register: _installer_version
   changed_when: false
 

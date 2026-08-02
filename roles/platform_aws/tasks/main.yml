@@ -1,6 +1,30 @@
 ---
+- name: Validate AWS architecture
+  ansible.builtin.assert:
+    that:
+      - aws_architecture in ['x86_64', 'arm64']
+      - aws_architecture in aws_instance_types
+    fail_msg: "aws_architecture must be 'x86_64' or 'arm64' (got '{{ aws_architecture }}')"
+
+- name: Resolve AWS instance types from architecture
+  ansible.builtin.set_fact:
+    # install-config uses amd64/arm64; aws_architecture uses x86_64/arm64
+    _aws_install_architecture: "{{ 'amd64' if aws_architecture == 'x86_64' else 'arm64' }}"
+    _aws_control_plane_type: >-
+      {{
+        aws_control_plane_instance_type
+        if (aws_control_plane_instance_type | default('') | length > 0)
+        else aws_instance_types[aws_architecture].control_plane
+      }}
+    _aws_compute_type: >-
+      {{
+        aws_compute_instance_type
+        if (aws_compute_instance_type | default('') | length > 0)
+        else aws_instance_types[aws_architecture].compute
+      }}
+
 - name: Validate AWS variables for deploy
-  when: lifecycle_action == 'deploy'
+  when: ocp_lifecycle == 'deploy'
   ansible.builtin.assert:
     that:
       - aws_region | length > 0
@@ -8,7 +32,7 @@
     fail_msg: "AWS deploy requires aws_region and base_domain"
 
 - name: Check AWS credentials (profile or environment)
-  when: lifecycle_action == 'deploy'
+  when: ocp_lifecycle == 'deploy'
   block:
     - name: Probe AWS identity
       ansible.builtin.command:
@@ -26,21 +50,30 @@
           AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY (and ensure the aws CLI is installed).
           Detail: {{ _aws_identity.stderr | default(_aws_identity.stdout) }}
 
+- name: Show selected AWS machine types
+  when: ocp_lifecycle == 'deploy'
+  ansible.builtin.debug:
+    msg: >-
+      aws_architecture={{ aws_architecture }}
+      install-config architecture={{ _aws_install_architecture }}
+      controlPlane={{ _aws_control_plane_type }}
+      compute={{ _aws_compute_type }}
+
 - name: Render install-config.yaml for AWS IPI
-  when: lifecycle_action == 'deploy'
+  when: ocp_lifecycle == 'deploy'
   ansible.builtin.template:
     src: install-config.yaml.j2
     dest: "{{ cluster_dir }}/install-config.yaml"
     mode: "0600"
 
 - name: Confirm metadata.json exists for destroy
-  when: lifecycle_action == 'destroy'
+  when: ocp_lifecycle == 'destroy'
   ansible.builtin.stat:
     path: "{{ cluster_dir }}/metadata.json"
   register: _aws_metadata
 
 - name: Fail destroy without metadata
-  when: lifecycle_action == 'destroy' and not _aws_metadata.stat.exists
+  when: ocp_lifecycle == 'destroy' and not _aws_metadata.stat.exists
   ansible.builtin.fail:
     msg: >-
       Cannot destroy: {{ cluster_dir }}/metadata.json not found.

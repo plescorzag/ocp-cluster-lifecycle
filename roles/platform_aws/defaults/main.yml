@@ -1,3 +1,15 @@
 ---
 aws_region: eu-west-1
 aws_profile: ""
+aws_architecture: x86_64
+aws_control_plane_instance_type: ""
+aws_compute_instance_type: ""
+
+# Default EC2 types per architecture (used when explicit types are empty)
+aws_instance_types:
+  x86_64:
+    control_plane: m6i.xlarge
+    compute: m6i.xlarge
+  arm64:
+    control_plane: m6g.xlarge
+    compute: m6g.xlarge
