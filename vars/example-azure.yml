@@ -1,0 +1,38 @@
+---
+# Example Azure IPI vars. Copy and fill in real values — do NOT commit secrets.
+# Usage:
+#   # Option A: export SP vars (OpenEnv-style), then run playbook
+#   export GUID=xxxx
+#   export CLIENT_ID=...
+#   export PASSWORD=...
+#   export TENANT=...
+#   export SUBSCRIPTION=...
+#   export RESOURCEGROUP=openenv-xxxx
+#   ansible-playbook playbooks/deploy.yml -e @vars/my-azure.yml
+#
+#   # Option B: put non-secret values here and keep secret in env / vault
+
+platform: azure
+provisioner: ipi
+ocp_version: "4.22.6"
+cluster_type: ha
+cluster_architecture: x86_64
+
+cluster_name: demo
+# Must be a DNS zone that exists in azure_base_domain_resource_group / RESOURCEGROUP
+base_domain: example.com
+
+azure_region: eastus
+# Optional overrides (otherwise taken from RESOURCEGROUP env or azure_resource_group):
+# azure_resource_group: openenv-xxxx
+# azure_base_domain_resource_group: openenv-xxxx
+# azure_cluster_resource_group: openenv-xxxx
+
+# Service principal — prefer env CLIENT_ID/PASSWORD/TENANT/SUBSCRIPTION
+# azure_client_id: ""
+# azure_client_secret: ""
+# azure_tenant_id: ""
+# azure_subscription_id: ""
+
+pull_secret_file: "~/pull-secret.json"
+ssh_public_key_file: "~/.ssh/id_rsa.pub"

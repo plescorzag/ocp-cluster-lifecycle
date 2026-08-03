@@ -1,8 +1,159 @@
 ---
-- name: Azure platform is not implemented
+- name: Resolve cluster architecture for Azure
+  ansible.builtin.set_fact:
+    _cluster_architecture: "{{ cluster_architecture | default(aws_architecture | default('x86_64')) }}"
+
+- name: Validate Azure architecture
+  ansible.builtin.assert:
+    that:
+      - _cluster_architecture in ['x86_64', 'arm64']
+      - _cluster_architecture in azure_instance_types
+    fail_msg: "cluster_architecture must be 'x86_64' or 'arm64' (got '{{ _cluster_architecture }}')"
+
+- name: Resolve Azure credentials from vars or environment
+  ansible.builtin.set_fact:
+    _azure_client_id: "{{ azure_client_id if (azure_client_id | default('') | length > 0) else (lookup('env', 'CLIENT_ID') | default(lookup('env', 'AZURE_CLIENT_ID'), true) | default('', true)) }}"
+    _azure_client_secret: "{{ azure_client_secret if (azure_client_secret | default('') | length > 0) else (lookup('env', 'PASSWORD') | default(lookup('env', 'AZURE_CLIENT_SECRET'), true) | default('', true)) }}"
+    _azure_tenant_id: "{{ azure_tenant_id if (azure_tenant_id | default('') | length > 0) else (lookup('env', 'TENANT') | default(lookup('env', 'AZURE_TENANT_ID'), true) | default('', true)) }}"
+    _azure_subscription_id: "{{ azure_subscription_id if (azure_subscription_id | default('') | length > 0) else (lookup('env', 'SUBSCRIPTION') | default(lookup('env', 'AZURE_SUBSCRIPTION_ID'), true) | default('', true)) }}"
+    _azure_resource_group: "{{ azure_resource_group if (azure_resource_group | default('') | length > 0) else (lookup('env', 'RESOURCEGROUP') | default('', true)) }}"
+    _azure_guid: "{{ azure_guid if (azure_guid | default('') | length > 0) else (lookup('env', 'GUID') | default('', true)) }}"
+  no_log: true
+
+- name: Resolve Azure resource group names
+  ansible.builtin.set_fact:
+    _azure_base_domain_rg: >-
+      {{
+        azure_base_domain_resource_group
+        if (azure_base_domain_resource_group | default('') | length > 0)
+        else _azure_resource_group
+      }}
+    _azure_cluster_rg: >-
+      {{
+        azure_cluster_resource_group
+        if (azure_cluster_resource_group | default('') | length > 0)
+        else _azure_resource_group
+      }}
+
+- name: Resolve Azure VM sizes and install architecture
+  ansible.builtin.set_fact:
+    _azure_install_architecture: "{{ 'amd64' if _cluster_architecture == 'x86_64' else 'arm64' }}"
+    _azure_control_plane_type: >-
+      {{
+        azure_control_plane_instance_type
+        if (azure_control_plane_instance_type | default('') | length > 0)
+        else azure_instance_types[_cluster_architecture].control_plane
+      }}
+    _azure_compute_type: >-
+      {{
+        azure_compute_instance_type
+        if (azure_compute_instance_type | default('') | length > 0)
+        else azure_instance_types[_cluster_architecture].compute
+      }}
+
+- name: Validate Azure variables for deploy
+  when: ocp_lifecycle == 'deploy'
+  ansible.builtin.assert:
+    that:
+      - azure_region | length > 0
+      - base_domain | length > 0
+      - _azure_client_id | length > 0
+      - _azure_client_secret | length > 0
+      - _azure_tenant_id | length > 0
+      - _azure_subscription_id | length > 0
+      - _azure_base_domain_rg | length > 0
+    fail_msg: >-
+      Azure deploy requires azure_region, base_domain, resource group, and a service principal.
+      Set azure_* vars or export CLIENT_ID, PASSWORD, TENANT, SUBSCRIPTION, RESOURCEGROUP.
+
+- name: Show selected Azure machine settings
+  when: ocp_lifecycle == 'deploy'
+  ansible.builtin.debug:
+    msg: >-
+      azure_region={{ azure_region }}
+      architecture={{ _azure_install_architecture }}
+      controlPlane={{ _azure_control_plane_type }}
+      compute={{ _azure_compute_type }}
+      baseDomainRG={{ _azure_base_domain_rg }}
+      clusterRG={{ _azure_cluster_rg if (_azure_cluster_rg | length > 0) else '(installer-created)' }}
+      guid={{ _azure_guid | default('') }}
+
+- name: Prepare Azure service principal auth for openshift-install
+  when: ocp_lifecycle in ['deploy', 'destroy']
+  block:
+    - name: Ensure Azure auth directory exists
+      ansible.builtin.file:
+        path: "{{ cluster_dir }}/.azure"
+        state: directory
+        mode: "0700"
+
+    - name: Write osServicePrincipal.json for installer
+      when: >-
+        (_azure_client_id | default('') | length > 0) and
+        (_azure_client_secret | default('') | length > 0) and
+        (_azure_tenant_id | default('') | length > 0) and
+        (_azure_subscription_id | default('') | length > 0)
+      ansible.builtin.copy:
+        dest: "{{ cluster_dir }}/.azure/osServicePrincipal.json"
+        mode: "0600"
+        content: |
+          {
+            "subscriptionId": "{{ _azure_subscription_id }}",
+            "clientId": "{{ _azure_client_id }}",
+            "clientSecret": "{{ _azure_client_secret }}",
+            "tenantId": "{{ _azure_tenant_id }}"
+          }
+      no_log: true
+
+    - name: Export AZURE_AUTH_LOCATION for provisioner
+      ansible.builtin.set_fact:
+        azure_auth_location: "{{ cluster_dir }}/.azure/osServicePrincipal.json"
+
+- name: Render install-config.yaml for Azure IPI
+  when: ocp_lifecycle == 'deploy'
+  block:
+    - name: Remove stale install-config before rendering
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ cluster_dir }}/install-config.yaml"
+        - "{{ cluster_dir }}/install-config.yaml.backup"
+
+    - name: Render install-config.yaml
+      ansible.builtin.template:
+        src: install-config.yaml.j2
+        dest: "{{ cluster_dir }}/install-config.yaml"
+        mode: "0600"
+
+    - name: Validate install-config.yaml parses as YAML
+      ansible.builtin.slurp:
+        src: "{{ cluster_dir }}/install-config.yaml"
+      register: _azure_install_config_slurp
+      no_log: true
+
+    - name: Parse install-config.yaml
+      ansible.builtin.set_fact:
+        _azure_install_config_parsed: "{{ _azure_install_config_slurp.content | b64decode | from_yaml }}"
+      no_log: true
+
+    - name: Assert required install-config string fields
+      ansible.builtin.assert:
+        that:
+          - _azure_install_config_parsed.pullSecret is string
+          - _azure_install_config_parsed.sshKey is string
+          - _azure_install_config_parsed.platform.azure.baseDomainResourceGroupName | length > 0
+        fail_msg: "Azure install-config.yaml is invalid after render."
+
+- name: Confirm metadata.json exists for destroy
+  when: ocp_lifecycle == 'destroy'
+  ansible.builtin.stat:
+    path: "{{ cluster_dir }}/metadata.json"
+  register: _azure_metadata
+
+- name: Fail destroy without metadata
+  when: ocp_lifecycle == 'destroy' and not _azure_metadata.stat.exists
   ansible.builtin.fail:
     msg: >-
-      platform=azure is on the roadmap but not implemented yet.
-      Use platform=aws with provisioner=ipi for now.
-      Planned: Azure IPI install-config generation and credential checks,
-      then UPI support.
+      Cannot destroy: {{ cluster_dir }}/metadata.json not found.
+      Point cluster_dir (or cluster_name) at the directory used during deploy.

@@ -7,11 +7,15 @@ ocp_version: ""
 # Cluster topology: sno | ha | compact
 cluster_type: ha
 
-# Cloud platform: aws (implemented) | azure | gcp (roadmap stubs)
+# Cloud platform: aws | azure (implemented) | gcp (roadmap stub)
 platform: aws
 
 # Provisioning method: ipi (implemented) | upi (roadmap stub)
 provisioner: ipi
+
+# Node CPU architecture for cloud VMs: x86_64 (default) | arm64
+# Shared by AWS and Azure. aws_architecture remains a supported alias in code.
+cluster_architecture: x86_64
 
 # Cluster identity
 cluster_name: ""
@@ -29,19 +33,29 @@ ssh_public_key_file: "~/.ssh/id_rsa.pub"
 aws_region: eu-west-1
 aws_profile: ""
 # Prefer env AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY, or aws_profile above
-#
-# Node CPU architecture for AWS EC2 instances: x86_64 (default) | arm64
-# Quay and many RH operators require x86_64 / amd64 images.
-aws_architecture: x86_64
-# Optional explicit instance types (override architecture defaults)
 aws_control_plane_instance_type: ""
 aws_compute_instance_type: ""
 # AWS credentials mode for install-config: auto | Passthrough | Manual | Mint
 # auto (default): SSO -> Passthrough; ~/.aws/credentials or env keys -> Mint
 aws_credentials_mode: auto
 
-# Release payload for openshift-install. Empty = derive from aws_architecture.
-# Needed when the installer binary arch (e.g. Mac arm64) differs from node arch (x86_64).
+# Azure (service principal; env aliases: CLIENT_ID, PASSWORD, TENANT, SUBSCRIPTION, RESOURCEGROUP, GUID)
+azure_region: eastus
+azure_cloud_name: AzurePublicCloud
+azure_outbound_type: Loadbalancer
+azure_client_id: ""
+azure_client_secret: ""
+azure_tenant_id: ""
+azure_subscription_id: ""
+azure_resource_group: ""
+# Defaults to azure_resource_group when empty
+azure_base_domain_resource_group: ""
+azure_cluster_resource_group: ""
+azure_guid: ""
+azure_control_plane_instance_type: ""
+azure_compute_instance_type: ""
+
+# Release payload for openshift-install. Empty = derive from cluster_architecture.
 # Example: quay.io/openshift-release-dev/ocp-release:4.22.6-x86_64
 openshift_release_image: ""
 

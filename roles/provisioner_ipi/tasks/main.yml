@@ -12,6 +12,7 @@
 
 - name: Resolve OpenShift release image for target node architecture
   ansible.builtin.set_fact:
+    _cluster_architecture: "{{ cluster_architecture | default(aws_architecture | default('x86_64')) }}"
     # Image tags use x86_64 / aarch64 (not amd64 / arm64)
     _openshift_release_image: >-
       {{
@@ -19,7 +20,7 @@
         if (openshift_release_image | default('') | length > 0)
         else (
           openshift_release_image_repo ~ ':' ~ ocp_version ~ '-' ~ (
-            'x86_64' if (aws_architecture | default('x86_64')) == 'x86_64' else 'aarch64'
+            'x86_64' if (cluster_architecture | default(aws_architecture | default('x86_64'))) == 'x86_64' else 'aarch64'
           )
         )
       }}
@@ -33,7 +34,12 @@
         }
         | combine(
             {'AWS_PROFILE': aws_profile}
-            if (aws_profile is defined and aws_profile | length > 0)
+            if (platform == 'aws' and aws_profile is defined and aws_profile | length > 0)
+            else {}
+          )
+        | combine(
+            {'AZURE_AUTH_LOCATION': azure_auth_location}
+            if (platform == 'azure' and azure_auth_location is defined and azure_auth_location | length > 0)
             else {}
           )
       }}
@@ -42,7 +48,8 @@
   ansible.builtin.debug:
     msg: >-
       OPENSHIFT_INSTALL_RELEASE_IMAGE_OVERRIDE={{ _openshift_release_image }}
-      (installer host may differ from cluster node architecture)
+      platform={{ platform }}
+      {% if platform == 'azure' %}AZURE_AUTH_LOCATION={{ azure_auth_location | default('') }}{% endif %}
 
 - name: Check for leftover installer state before deploy
   when: ocp_lifecycle == 'deploy'

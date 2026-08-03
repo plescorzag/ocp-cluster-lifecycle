@@ -50,10 +50,10 @@
         name: platform_aws
       when: platform == 'aws' and provisioner == 'ipi'
 
-    - name: Include Azure platform tasks (stub)
+    - name: Include Azure platform tasks
       ansible.builtin.include_role:
         name: platform_azure
-      when: platform == 'azure'
+      when: platform == 'azure' and provisioner == 'ipi'
 
     - name: Include GCP platform tasks (stub)
       ansible.builtin.include_role:
@@ -63,4 +63,4 @@
     - name: Run IPI provisioner
       ansible.builtin.include_role:
         name: provisioner_ipi
-      when: provisioner == 'ipi' and platform == 'aws'
+      when: provisioner == 'ipi' and platform in ['aws', 'azure']

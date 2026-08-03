@@ -1,2 +1,25 @@
 ---
-# Roadmap stub: Azure IPI/UPI not implemented yet.
+azure_region: eastus
+azure_cloud_name: AzurePublicCloud
+azure_outbound_type: Loadbalancer
+
+# Service principal (also readable from env: CLIENT_ID, PASSWORD, TENANT, SUBSCRIPTION, RESOURCEGROUP)
+azure_client_id: ""
+azure_client_secret: ""
+azure_tenant_id: ""
+azure_subscription_id: ""
+azure_resource_group: ""
+azure_base_domain_resource_group: ""
+azure_cluster_resource_group: ""
+azure_guid: ""
+
+azure_control_plane_instance_type: ""
+azure_compute_instance_type: ""
+
+azure_instance_types:
+  x86_64:
+    control_plane: Standard_D8s_v3
+    compute: Standard_D4s_v3
+  arm64:
+    control_plane: Standard_D8ps_v5
+    compute: Standard_D4ps_v5

@@ -1,0 +1,45 @@
+apiVersion: v1
+baseDomain: {{ base_domain }}
+metadata:
+  name: {{ cluster_name }}
+platform:
+  azure:
+    baseDomainResourceGroupName: {{ _azure_base_domain_rg }}
+    cloudName: {{ azure_cloud_name }}
+    outboundType: {{ azure_outbound_type }}
+    region: {{ azure_region }}
+{% if _azure_cluster_rg | length > 0 %}
+    resourceGroupName: {{ _azure_cluster_rg }}
+{% endif %}
+publish: External
+pullSecret: {{ (pull_secret_b64 | b64decode | trim) | to_json }}
+sshKey: {{ ssh_public_key | trim | to_json }}
+controlPlane:
+  architecture: {{ _azure_install_architecture }}
+  hyperthreading: Enabled
+  name: master
+  platform:
+    azure:
+      type: {{ _azure_control_plane_type }}
+      osDisk:
+        diskSizeGB: 128
+  replicas: {{ control_plane_replicas | int }}
+compute:
+  - architecture: {{ _azure_install_architecture }}
+    hyperthreading: Enabled
+    name: worker
+    platform:
+      azure:
+        type: {{ _azure_compute_type }}
+        osDisk:
+          diskSizeGB: 128
+    replicas: {{ compute_replicas | int }}
+networking:
+  networkType: OVNKubernetes
+  clusterNetwork:
+    - cidr: 10.128.0.0/14
+      hostPrefix: 23
+  machineNetwork:
+    - cidr: 10.0.0.0/16
+  serviceNetwork:
+    - 172.30.0.0/16

@@ -2,9 +2,9 @@
 - name: Validate AWS architecture
   ansible.builtin.assert:
     that:
-      - aws_architecture in ['x86_64', 'arm64']
-      - aws_architecture in aws_instance_types
-    fail_msg: "aws_architecture must be 'x86_64' or 'arm64' (got '{{ aws_architecture }}')"
+      - (cluster_architecture | default(aws_architecture | default('x86_64'))) in ['x86_64', 'arm64']
+      - (cluster_architecture | default(aws_architecture | default('x86_64'))) in aws_instance_types
+    fail_msg: "cluster_architecture must be 'x86_64' or 'arm64'"
 
 - name: Validate AWS credentials mode
   ansible.builtin.assert:
@@ -14,19 +14,20 @@
 
 - name: Resolve AWS instance types from architecture
   ansible.builtin.set_fact:
-    # install-config uses amd64/arm64; aws_architecture uses x86_64/arm64
-    _aws_install_architecture: "{{ 'amd64' if aws_architecture == 'x86_64' else 'arm64' }}"
+    _cluster_architecture: "{{ cluster_architecture | default(aws_architecture | default('x86_64')) }}"
+    # install-config uses amd64/arm64; cluster_architecture uses x86_64/arm64
+    _aws_install_architecture: "{{ 'amd64' if (cluster_architecture | default(aws_architecture | default('x86_64'))) == 'x86_64' else 'arm64' }}"
     _aws_control_plane_type: >-
       {{
         aws_control_plane_instance_type
         if (aws_control_plane_instance_type | default('') | length > 0)
-        else aws_instance_types[aws_architecture].control_plane
+        else aws_instance_types[cluster_architecture | default(aws_architecture | default('x86_64'))].control_plane
       }}
     _aws_compute_type: >-
       {{
         aws_compute_instance_type
         if (aws_compute_instance_type | default('') | length > 0)
-        else aws_instance_types[aws_architecture].compute
+        else aws_instance_types[cluster_architecture | default(aws_architecture | default('x86_64'))].compute
       }}
 
 - name: Validate AWS variables for deploy
@@ -131,7 +132,7 @@
   when: ocp_lifecycle == 'deploy'
   ansible.builtin.debug:
     msg: >-
-      aws_architecture={{ aws_architecture }}
+      cluster_architecture={{ _cluster_architecture }}
       install-config architecture={{ _aws_install_architecture }}
       controlPlane={{ _aws_control_plane_type }}
       compute={{ _aws_compute_type }}

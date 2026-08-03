@@ -30,3 +30,5 @@ __pycache__/
 
 # Local cluster vars (may contain paths/secrets)
 vars/my-cluster.yml
+vars/my-azure.yml
+**/osServicePrincipal.json
