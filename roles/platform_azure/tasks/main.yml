@@ -16,24 +16,22 @@
     _azure_client_secret: "{{ azure_client_secret if (azure_client_secret | default('') | length > 0) else (lookup('env', 'PASSWORD') | default(lookup('env', 'AZURE_CLIENT_SECRET'), true) | default('', true)) }}"
     _azure_tenant_id: "{{ azure_tenant_id if (azure_tenant_id | default('') | length > 0) else (lookup('env', 'TENANT') | default(lookup('env', 'AZURE_TENANT_ID'), true) | default('', true)) }}"
     _azure_subscription_id: "{{ azure_subscription_id if (azure_subscription_id | default('') | length > 0) else (lookup('env', 'SUBSCRIPTION') | default(lookup('env', 'AZURE_SUBSCRIPTION_ID'), true) | default('', true)) }}"
-    _azure_resource_group: "{{ azure_resource_group if (azure_resource_group | default('') | length > 0) else (lookup('env', 'RESOURCEGROUP') | default('', true)) }}"
+    _azure_resource_group: >-
+      {{
+        azure_resource_group if (azure_resource_group | default('') | length > 0)
+        else (
+          lookup('env', 'RESOURCEGROUP') | default(lookup('env', 'RESOURCE_GROUP'), true)
+          | default(lookup('env', 'AZURE_RESOURCE_GROUP'), true)
+          | default('', true)
+        )
+      }}
     _azure_guid: "{{ azure_guid if (azure_guid | default('') | length > 0) else (lookup('env', 'GUID') | default('', true)) }}"
   no_log: true
 
 - name: Resolve Azure resource group names
   ansible.builtin.set_fact:
-    _azure_base_domain_rg: >-
-      {{
-        azure_base_domain_resource_group
-        if (azure_base_domain_resource_group | default('') | length > 0)
-        else _azure_resource_group
-      }}
-    _azure_cluster_rg: >-
-      {{
-        azure_cluster_resource_group
-        if (azure_cluster_resource_group | default('') | length > 0)
-        else _azure_resource_group
-      }}
+    _azure_base_domain_rg: "{{ (azure_base_domain_resource_group | default('') | length > 0) | ternary(azure_base_domain_resource_group, _azure_resource_group) | trim }}"
+    _azure_cluster_rg: "{{ (azure_cluster_resource_group | default('') | length > 0) | ternary(azure_cluster_resource_group, _azure_resource_group) | trim }}"
 
 - name: Resolve Azure VM sizes and install architecture
   ansible.builtin.set_fact:
@@ -63,8 +61,16 @@
       - _azure_subscription_id | length > 0
       - _azure_base_domain_rg | length > 0
     fail_msg: >-
-      Azure deploy requires azure_region, base_domain, resource group, and a service principal.
-      Set azure_* vars or export CLIENT_ID, PASSWORD, TENANT, SUBSCRIPTION, RESOURCEGROUP.
+      Missing Azure deploy inputs (set vars or export env in the SAME shell as ansible-playbook):
+      azure_region={{ 'OK' if (azure_region | length > 0) else 'MISSING' }},
+      base_domain={{ 'OK' if (base_domain | length > 0) else 'MISSING' }},
+      client_id={{ 'OK' if (_azure_client_id | length > 0) else 'MISSING (CLIENT_ID / azure_client_id)' }},
+      client_secret={{ 'OK' if (_azure_client_secret | length > 0) else 'MISSING (PASSWORD / azure_client_secret)' }},
+      tenant={{ 'OK' if (_azure_tenant_id | length > 0) else 'MISSING (TENANT / azure_tenant_id)' }},
+      subscription={{ 'OK' if (_azure_subscription_id | length > 0) else 'MISSING (SUBSCRIPTION / azure_subscription_id)' }},
+      resource_group={{ 'OK' if (_azure_base_domain_rg | length > 0) else 'MISSING (RESOURCEGROUP / azure_resource_group)' }}.
+      Tip: add azure_resource_group: openenv-<guid> to vars/my-azure.yml, or:
+      export RESOURCEGROUP=openenv-<guid>
 
 - name: Show selected Azure machine settings
   when: ocp_lifecycle == 'deploy'

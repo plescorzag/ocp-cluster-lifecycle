@@ -23,8 +23,9 @@ cluster_name: demo
 base_domain: example.com
 
 azure_region: eastus
-# Optional overrides (otherwise taken from RESOURCEGROUP env or azure_resource_group):
-# azure_resource_group: openenv-xxxx
+# Required: resource group that holds the public DNS zone for base_domain
+azure_resource_group: openenv-xxxx
+# Optional overrides (otherwise taken from azure_resource_group / RESOURCEGROUP):
 # azure_base_domain_resource_group: openenv-xxxx
 # azure_cluster_resource_group: openenv-xxxx
 
