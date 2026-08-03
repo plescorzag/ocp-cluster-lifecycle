@@ -30,8 +30,12 @@
 
 - name: Resolve Azure resource group names
   ansible.builtin.set_fact:
+    # DNS zone RG (may be in a different region than azure_region — that is OK)
     _azure_base_domain_rg: "{{ (azure_base_domain_resource_group | default('') | length > 0) | ternary(azure_base_domain_resource_group, _azure_resource_group) | trim }}"
-    _azure_cluster_rg: "{{ (azure_cluster_resource_group | default('') | length > 0) | ternary(azure_cluster_resource_group, _azure_resource_group) | trim }}"
+    # Cluster RG: leave empty by default so openshift-install creates a new empty RG
+    # in azure_region. Do NOT reuse the OpenEnv/DNS RG (it is non-empty and may be
+    # in another region — installer rejects that).
+    _azure_cluster_rg: "{{ azure_cluster_resource_group | default('') | trim }}"
 
 - name: Resolve Azure VM sizes and install architecture
   ansible.builtin.set_fact:
@@ -80,8 +84,8 @@
       architecture={{ _azure_install_architecture }}
       controlPlane={{ _azure_control_plane_type }}
       compute={{ _azure_compute_type }}
-      baseDomainRG={{ _azure_base_domain_rg }}
-      clusterRG={{ _azure_cluster_rg if (_azure_cluster_rg | length > 0) else '(installer-created)' }}
+      baseDomainRG={{ _azure_base_domain_rg }} (DNS zone; region may differ)
+      clusterRG={{ _azure_cluster_rg if (_azure_cluster_rg | length > 0) else '(installer creates new empty RG in azure_region)' }}
       guid={{ _azure_guid | default('') }}
 
 - name: Prepare Azure service principal auth for openshift-install

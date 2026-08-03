@@ -22,12 +22,13 @@ cluster_name: demo
 # Must be a DNS zone that exists in azure_base_domain_resource_group / RESOURCEGROUP
 base_domain: example.com
 
-azure_region: eastus
-# Required: resource group that holds the public DNS zone for base_domain
+azure_region: francecentral
+# Resource group that holds the public DNS zone for base_domain (e.g. OpenEnv RG).
+# May be in a different Azure region than azure_region — that is supported.
 azure_resource_group: openenv-xxxx
-# Optional overrides (otherwise taken from azure_resource_group / RESOURCEGROUP):
-# azure_base_domain_resource_group: openenv-xxxx
-# azure_cluster_resource_group: openenv-xxxx
+# Optional: only set if you pre-created an EMPTY resource group in azure_region.
+# Leave unset so openshift-install creates the cluster RG automatically.
+# azure_cluster_resource_group: ""
 
 # Service principal — prefer env CLIENT_ID/PASSWORD/TENANT/SUBSCRIPTION
 # azure_client_id: ""

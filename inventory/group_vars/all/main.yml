@@ -48,8 +48,10 @@ azure_client_secret: ""
 azure_tenant_id: ""
 azure_subscription_id: ""
 azure_resource_group: ""
-# Defaults to azure_resource_group when empty
+# RG containing the public DNS zone for base_domain (defaults to azure_resource_group / RESOURCEGROUP)
 azure_base_domain_resource_group: ""
+# Optional: EMPTY RG in azure_region for cluster resources. Leave empty to let the installer create one.
+# Do not set this to the OpenEnv/DNS RG (installer requires empty RG in the target region).
 azure_cluster_resource_group: ""
 azure_guid: ""
 azure_control_plane_instance_type: ""
