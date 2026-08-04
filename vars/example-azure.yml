@@ -22,7 +22,10 @@ cluster_name: demo
 # Must be a DNS zone that exists in azure_base_domain_resource_group / RESOURCEGROUP
 base_domain: example.com
 
-azure_region: francecentral
+azure_region: northeurope
+# RHPDS/OpenEnv typically allows only:
+#   eastus, eastus2, westus, centralus, canadacentral, eastasia, northeurope, westeurope
+# francecentral is NOT allowed (RequestDisallowedByPolicy).
 # Resource group that holds the public DNS zone for base_domain (e.g. OpenEnv RG).
 # May be in a different Azure region than azure_region — that is supported.
 azure_resource_group: openenv-xxxx

@@ -1,7 +1,18 @@
 ---
-azure_region: eastus
+azure_region: northeurope
 azure_cloud_name: AzurePublicCloud
 azure_outbound_type: Loadbalancer
+# Optional guard for RHPDS/OpenEnv subscriptions (set false to skip)
+azure_rhpds_region_check: true
+azure_rhpds_allowed_regions:
+  - eastus
+  - eastus2
+  - westus
+  - centralus
+  - canadacentral
+  - eastasia
+  - northeurope
+  - westeurope
 
 # Service principal (also readable from env: CLIENT_ID, PASSWORD, TENANT, SUBSCRIPTION, RESOURCEGROUP)
 azure_client_id: ""

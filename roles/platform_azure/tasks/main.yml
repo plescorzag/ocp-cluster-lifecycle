@@ -76,6 +76,20 @@
       Tip: add azure_resource_group: openenv-<guid> to vars/my-azure.yml, or:
       export RESOURCEGROUP=openenv-<guid>
 
+- name: Validate Azure region against RHPDS/OpenEnv allow-list
+  when:
+    - ocp_lifecycle == 'deploy'
+    - azure_rhpds_region_check | bool
+  ansible.builtin.assert:
+    that:
+      - azure_region in azure_rhpds_allowed_regions
+    fail_msg: >-
+      azure_region '{{ azure_region }}' is blocked by RHPDS policy
+      "Deny VMs outside supported regions".
+      Allowed: {{ azure_rhpds_allowed_regions | join(', ') }}.
+      Set azure_region to one of those (northeurope or westeurope are typical in EU),
+      or set azure_rhpds_region_check: false if your subscription has no such policy.
+
 - name: Show selected Azure machine settings
   when: ocp_lifecycle == 'deploy'
   ansible.builtin.debug:

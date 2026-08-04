@@ -40,7 +40,8 @@ aws_compute_instance_type: ""
 aws_credentials_mode: auto
 
 # Azure (service principal; env aliases: CLIENT_ID, PASSWORD, TENANT, SUBSCRIPTION, RESOURCEGROUP, GUID)
-azure_region: eastus
+# RHPDS/OpenEnv VM policy usually allows: eastus eastus2 westus centralus canadacentral eastasia northeurope westeurope
+azure_region: northeurope
 azure_cloud_name: AzurePublicCloud
 azure_outbound_type: Loadbalancer
 azure_client_id: ""
