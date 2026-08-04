@@ -119,6 +119,112 @@
       ansible.builtin.set_fact:
         azure_auth_location: "{{ cluster_dir }}/.azure/osServicePrincipal.json"
 
+- name: Preflight check DNS resource group and zone (deploy)
+  when: ocp_lifecycle == 'deploy'
+  block:
+    - name: Check az CLI is available
+      ansible.builtin.command:
+        argv: [az, version]
+      register: _az_version
+      changed_when: false
+      failed_when: false
+
+    - name: Fail if az CLI missing
+      when: _az_version.rc != 0
+      ansible.builtin.fail:
+        msg: >-
+          Azure CLI (az) is required for DNS preflight checks.
+          Install it, then re-run deploy.
+
+    - name: Login with service principal for preflight
+      ansible.builtin.command:
+        argv:
+          - az
+          - login
+          - --service-principal
+          - -u
+          - "{{ _azure_client_id }}"
+          - -p
+          - "{{ _azure_client_secret }}"
+          - --tenant
+          - "{{ _azure_tenant_id }}"
+          - --output
+          - none
+      no_log: true
+      changed_when: false
+
+    - name: Set subscription for preflight
+      ansible.builtin.command:
+        argv:
+          - az
+          - account
+          - set
+          - --subscription
+          - "{{ _azure_subscription_id }}"
+      changed_when: false
+
+    - name: Verify base domain resource group exists
+      ansible.builtin.command:
+        argv:
+          - az
+          - group
+          - show
+          - --name
+          - "{{ _azure_base_domain_rg }}"
+          - --query
+          - "{name:name,location:location}"
+          - -o
+          - json
+      register: _azure_rg_show
+      changed_when: false
+      failed_when: false
+
+    - name: Fail if base domain resource group is missing
+      when: _azure_rg_show.rc != 0
+      ansible.builtin.fail:
+        msg: >-
+          baseDomainResourceGroupName '{{ _azure_base_domain_rg }}' was not found
+          in subscription {{ _azure_subscription_id }} (ResourceGroupNotFound).
+          OpenEnv sandboxes expire; confirm the RG still exists and the SP can read it:
+            az group show -n {{ _azure_base_domain_rg }} --subscription {{ _azure_subscription_id }}
+          Detail: {{ _azure_rg_show.stderr | default(_azure_rg_show.stdout) }}
+
+    - name: Verify public DNS zone exists for base_domain
+      ansible.builtin.command:
+        argv:
+          - az
+          - network
+          - dns
+          - zone
+          - show
+          - --resource-group
+          - "{{ _azure_base_domain_rg }}"
+          - --name
+          - "{{ base_domain }}"
+          - --query
+          - name
+          - -o
+          - tsv
+      register: _azure_dns_zone
+      changed_when: false
+      failed_when: false
+
+    - name: Fail if DNS zone is missing
+      when: _azure_dns_zone.rc != 0
+      ansible.builtin.fail:
+        msg: >-
+          DNS zone '{{ base_domain }}' was not found in resource group
+          '{{ _azure_base_domain_rg }}'. Set base_domain to the existing zone name
+          (e.g. t2gpk.azure.redhatworkshops.io) and azure_resource_group to that zone's RG.
+          Detail: {{ _azure_dns_zone.stderr | default(_azure_dns_zone.stdout) }}
+
+    - name: Show DNS preflight OK
+      ansible.builtin.debug:
+        msg: >-
+          DNS preflight OK: RG={{ _azure_base_domain_rg }}
+          ({{ (_azure_rg_show.stdout | from_json).location }})
+          zone={{ base_domain }}
+
 - name: Render install-config.yaml for Azure IPI
   when: ocp_lifecycle == 'deploy'
   block:
