@@ -209,13 +209,38 @@
       changed_when: false
       failed_when: false
 
+    - name: List DNS zones in base domain resource group
+      when: _azure_dns_zone.rc != 0
+      ansible.builtin.command:
+        argv:
+          - az
+          - network
+          - dns
+          - zone
+          - list
+          - --resource-group
+          - "{{ _azure_base_domain_rg }}"
+          - --query
+          - "[].name"
+          - -o
+          - tsv
+      register: _azure_dns_zones_list
+      changed_when: false
+      failed_when: false
+
     - name: Fail if DNS zone is missing
       when: _azure_dns_zone.rc != 0
       ansible.builtin.fail:
         msg: >-
           DNS zone '{{ base_domain }}' was not found in resource group
-          '{{ _azure_base_domain_rg }}'. Set base_domain to the existing zone name
-          (e.g. t2gpk.azure.redhatworkshops.io) and azure_resource_group to that zone's RG.
+          '{{ _azure_base_domain_rg }}'.
+          Zones present in that RG: {{
+            (_azure_dns_zones_list.stdout_lines | default([])) | join(', ')
+            if (_azure_dns_zones_list.rc | default(1) == 0 and (_azure_dns_zones_list.stdout_lines | default([]) | length > 0))
+            else '(none found — check GUID/RESOURCEGROUP)'
+          }}.
+          Update base_domain in your vars file to match the zone name
+          (for OpenEnv this is usually <guid>.azure.redhatworkshops.io).
           Detail: {{ _azure_dns_zone.stderr | default(_azure_dns_zone.stdout) }}
 
     - name: Show DNS preflight OK
