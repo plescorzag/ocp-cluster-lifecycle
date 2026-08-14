@@ -19,8 +19,9 @@ cluster_type: ha
 cluster_architecture: x86_64
 
 cluster_name: demo
-# Must be a DNS zone that exists in azure_base_domain_resource_group / RESOURCEGROUP
-base_domain: example.com
+# DNS zone in OpenEnv (auto-derived from GUID if omitted):
+# base_domain: shzmc.azure.redhatworkshops.io
+# Or export GUID=shzmc and omit base_domain
 
 azure_region: northeurope
 # RHPDS/OpenEnv typically allows only:
