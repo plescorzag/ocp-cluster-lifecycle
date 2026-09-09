@@ -368,6 +368,52 @@
           ({{ (_azure_rg_show.stdout | from_json).location }})
           zone={{ base_domain }}
 
+    - name: List RBAC roles assigned to service principal
+      when: azure_blob_rbac_check | bool
+      ansible.builtin.command:
+        argv:
+          - az
+          - role
+          - assignment
+          - list
+          - --assignee
+          - "{{ _azure_client_id }}"
+          - --all
+          - --query
+          - "[].roleDefinitionName"
+          - -o
+          - tsv
+      register: _azure_sp_roles
+      changed_when: false
+      failed_when: false
+
+    - name: Fail if service principal lacks blob data-plane RBAC
+      when:
+        - azure_blob_rbac_check | bool
+        - (_azure_sp_roles.rc | default(1)) != 0
+          or (
+            (_azure_sp_roles.stdout_lines | default([]) | intersect(azure_required_blob_data_roles) | length) == 0
+          )
+      ansible.builtin.fail:
+        msg: >-
+          Service principal {{ _azure_client_id }} is missing a blob data-plane role
+          ({{ azure_required_blob_data_roles | join(' or ') }}).
+          OpenShift 4.16+/5.0 Azure IPI uploads bootstrap.ign to blob storage using OAuth;
+          Contributor / Owner alone cause AuthorizationPermissionMismatch on PUT .../ignition/bootstrap.ign.
+
+          Roles currently assigned to this SP:
+          {{ (_azure_sp_roles.stdout_lines | default([]) | unique | sort | join(', '))
+            if (_azure_sp_roles.rc | default(1) == 0 and (_azure_sp_roles.stdout_lines | default([]) | length > 0))
+            else '(none listed — SP may lack permission to read its own assignments)' }}.
+
+          If your subscription policy allows, grant (scope can be subscription or cluster RG):
+            az role assignment create --assignee {{ _azure_client_id }} \
+              --role "Storage Blob Data Contributor" \
+              --scope /subscriptions/{{ _azure_subscription_id }}
+
+          OpenEnv/RHPDS: you may need a workshop admin to add this role to the sandbox SP.
+          Set azure_blob_rbac_check: false to skip this preflight (install will still fail without the role).
+
 - name: Render install-config.yaml for Azure IPI
   when: ocp_lifecycle == 'deploy'
   block:
