@@ -16,6 +16,11 @@
     _azure_client_secret: "{{ azure_client_secret if (azure_client_secret | default('') | length > 0) else (lookup('env', 'PASSWORD') | default(lookup('env', 'AZURE_CLIENT_SECRET'), true) | default('', true)) }}"
     _azure_tenant_id: "{{ azure_tenant_id if (azure_tenant_id | default('') | length > 0) else (lookup('env', 'TENANT') | default(lookup('env', 'AZURE_TENANT_ID'), true) | default('', true)) }}"
     _azure_subscription_id: "{{ azure_subscription_id if (azure_subscription_id | default('') | length > 0) else (lookup('env', 'SUBSCRIPTION') | default(lookup('env', 'AZURE_SUBSCRIPTION_ID'), true) | default('', true)) }}"
+    _azure_guid: "{{ azure_guid if (azure_guid | default('') | length > 0) else (lookup('env', 'GUID') | default('', true)) }}"
+  no_log: true
+
+- name: Resolve Azure DNS resource group from vars or environment
+  ansible.builtin.set_fact:
     _azure_resource_group_from_env: >-
       {{
         lookup('env', 'RESOURCEGROUP') | default(lookup('env', 'RESOURCE_GROUP'), true)
@@ -31,14 +36,15 @@
         )
         else azure_resource_group
       }}
+
+- name: Choose Azure DNS resource group
+  ansible.builtin.set_fact:
     _azure_resource_group: >-
       {{
         _azure_resource_group_from_var
         if (_azure_resource_group_from_var | length > 0)
         else _azure_resource_group_from_env
       }}
-    _azure_guid: "{{ azure_guid if (azure_guid | default('') | length > 0) else (lookup('env', 'GUID') | default('', true)) }}"
-  no_log: true
 
 - name: Resolve Azure resource group names
   ansible.builtin.set_fact:
@@ -76,14 +82,16 @@
       - _azure_tenant_id | length > 0
       - _azure_subscription_id | length > 0
       - _azure_base_domain_rg | length > 0
+      - _azure_tenant_id is match('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
+      - _azure_subscription_id is match('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
     fail_msg: >-
-      Missing Azure deploy inputs (set vars or export env in the SAME shell as ansible-playbook):
+      Missing or invalid Azure deploy inputs (set vars or export env in the SAME shell as ansible-playbook):
       azure_region={{ 'OK' if (azure_region | length > 0) else 'MISSING' }},
       base_domain={{ 'OK' if (base_domain | length > 0) else 'MISSING' }},
       client_id={{ 'OK' if (_azure_client_id | length > 0) else 'MISSING (CLIENT_ID / azure_client_id)' }},
       client_secret={{ 'OK' if (_azure_client_secret | length > 0) else 'MISSING (PASSWORD / azure_client_secret)' }},
-      tenant={{ 'OK' if (_azure_tenant_id | length > 0) else 'MISSING (TENANT / azure_tenant_id)' }},
-      subscription={{ 'OK' if (_azure_subscription_id | length > 0) else 'MISSING (SUBSCRIPTION / azure_subscription_id)' }},
+      tenant={{ 'OK' if (_azure_tenant_id is match('^[0-9a-fA-F-]{36}$')) else 'INVALID (TENANT must be a UUID, not a domain name)' }},
+      subscription={{ 'OK' if (_azure_subscription_id is match('^[0-9a-fA-F-]{36}$')) else 'INVALID (SUBSCRIPTION must be a UUID)' }},
       resource_group={{ 'OK' if (_azure_base_domain_rg | length > 0) else 'MISSING (RESOURCEGROUP / azure_resource_group)' }}.
       Tip: add azure_resource_group: openenv-<guid> to vars/my-azure.yml, or:
       export RESOURCEGROUP=openenv-<guid>
