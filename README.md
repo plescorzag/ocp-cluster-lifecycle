@@ -14,6 +14,7 @@ Ansible playbooks to **deploy** and **destroy** OpenShift (OCP) clusters.
 ## Prerequisites
 
 - Ansible 2.14+ (`ansible-playbook`)
+- Python 3.9+ (Ansible controller)
 - Red Hat pull secret (`pull-secret.json`)
 - SSH **public** key (`.pub` file, not the private key)
 - **AWS:** AWS CLI configured; Route53 public hosted zone for `base_domain`
@@ -24,6 +25,105 @@ Install Ansible collections (optional but recommended):
 ```bash
 ansible-galaxy collection install -r requirements.yml
 ```
+
+### Linux
+
+Run the playbooks on a Linux host (or VM) with outbound HTTPS to `mirror.openshift.com`, `quay.io`, and your cloud APIs (AWS or Azure). The project uses `ansible_connection: local` — you do not need a remote inventory host.
+
+#### Packages
+
+| Component | Purpose |
+|---|---|
+| `ansible` or `ansible-core` | Run playbooks |
+| `python3` | Ansible controller |
+| `tar`, `gzip` | Extract downloaded `openshift-install` archive |
+| `git` | Clone this repository |
+| `aws` (AWS only) | Optional credential / Route53 checks |
+| `az` (Azure only) | Tenant resolution, DNS preflight, RBAC checks |
+
+**RHEL 8/9 / Fedora**
+
+```bash
+sudo dnf install -y ansible-core python3 tar gzip git
+
+# AWS
+sudo dnf install -y awscli
+
+# Azure (Microsoft repo — see https://learn.microsoft.com/cli/azure/install-azure-cli-linux)
+sudo dnf install -y azure-cli
+```
+
+**Ubuntu / Debian**
+
+```bash
+sudo apt update
+sudo apt install -y ansible python3 python3-pip tar gzip git curl unzip
+
+# AWS
+sudo apt install -y awscli
+
+# Azure
+curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+```
+
+If your distro ships an older Ansible, install a current `ansible-core` via pip:
+
+```bash
+python3 -m pip install --user 'ansible-core>=2.14'
+```
+
+#### Verify before deploy
+
+```bash
+ansible-playbook --version    # 2.14+
+python3 --version             # 3.9+
+tar --version                 # GNU tar (default on Linux)
+git clone https://github.com/plescorzag/ocp-cluster-lifecycle.git
+cd ocp-cluster-lifecycle
+ansible-galaxy collection install -r requirements.yml
+```
+
+**AWS**
+
+```bash
+aws --version
+aws sts get-caller-identity    # or confirm ~/.aws/credentials / SSO
+```
+
+**Azure (OpenEnv / RHPDS)**
+
+```bash
+az version
+export CLIENT_ID=... PASSWORD=... TENANT=... SUBSCRIPTION=... RESOURCEGROUP=...
+az login --service-principal -u "$CLIENT_ID" -p "$PASSWORD" --tenant "$TENANT"
+az account set --subscription "$SUBSCRIPTION"
+az group show -n "$RESOURCEGROUP"
+```
+
+Service principal RBAC for OpenShift 4.16+ / 5.0 on Azure (see [Azure service principal RBAC](#azure-service-principal-rbac-openshift-416--50)):
+
+```bash
+az role assignment list --assignee "$CLIENT_ID" --all \
+  --query "[].roleDefinitionName" -o tsv | sort -u
+# Must include Storage Blob Data Contributor (or Storage Blob Data Owner).
+# Subscription Owner / Contributor alone are not enough for bootstrap.ign upload.
+```
+
+If missing, an Owner SP can usually self-assign:
+
+```bash
+az role assignment create \
+  --assignee "$CLIENT_ID" \
+  --role "Storage Blob Data Contributor" \
+  --scope "/subscriptions/$SUBSCRIPTION"
+```
+
+#### Linux notes
+
+- Set `cluster_architecture: x86_64` (default) unless you intentionally deploy ARM nodes.
+- On Linux, `openshift-install` runs natively — no `arch -x86_64` wrapper (unlike Apple Silicon Macs).
+- Export OpenEnv/Azure env vars in the **same shell** as `ansible-playbook`, or put values in `vars/my-azure.yml`.
+- Do not commit secrets; keep `vars/my-azure.yml` and `clusters/` out of git (see `.gitignore`).
 
 ## Quick start (AWS IPI)
 
