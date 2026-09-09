@@ -5,7 +5,8 @@ Ansible playbooks to **deploy** and **destroy** OpenShift (OCP) clusters.
 | Feature | Status |
 |---|---|
 | AWS IPI | Implemented |
-| Azure / GCP | Roadmap stubs (fail with a clear message) |
+| Azure IPI | Implemented |
+| GCP IPI | Roadmap stub |
 | UPI | Roadmap stub |
 | Host OS detection | Linux, macOS, Windows |
 | Cluster types | `sno`, `ha` (3 control-plane + 2 workers), `compact` |
@@ -13,10 +14,10 @@ Ansible playbooks to **deploy** and **destroy** OpenShift (OCP) clusters.
 ## Prerequisites
 
 - Ansible 2.14+ (`ansible-playbook`)
-- AWS CLI configured (for AWS IPI)
 - Red Hat pull secret (`pull-secret.json`)
-- SSH public key
-- A Route53 public hosted zone for `base_domain`
+- SSH **public** key (`.pub` file, not the private key)
+- **AWS:** AWS CLI configured; Route53 public hosted zone for `base_domain`
+- **Azure:** Azure CLI (`az`); service principal credentials; public DNS zone in your resource group (e.g. OpenEnv)
 
 Install Ansible collections (optional but recommended):
 
@@ -51,13 +52,13 @@ ansible-playbook playbooks/deploy.yml -e @vars/my-cluster.yml
 ansible-playbook playbooks/destroy.yml -e @vars/my-cluster.yml
 ```
 
-### Required variables
+### AWS required variables
 
 | Variable | Description |
 |---|---|
 | `ocp_version` | OpenShift version, e.g. `4.16.30` |
 | `cluster_type` | `sno` \| `ha` \| `compact` |
-| `platform` | `aws` (only fully implemented) |
+| `platform` | `aws` |
 | `provisioner` | `ipi` (default) |
 | `cluster_name` | Cluster name (DNS label) |
 | `base_domain` | Base DNS domain (Route53 zone) |
@@ -65,6 +66,109 @@ ansible-playbook playbooks/destroy.yml -e @vars/my-cluster.yml
 | `pull_secret_file` | Path to pull secret JSON |
 | `ssh_public_key_file` | Path to SSH public key |
 | `aws_profile` | AWS CLI profile name (or use env credentials) |
+
+### AWS credentials
+
+`aws_credentials_mode: auto` (default) picks the right install-config mode:
+
+| Auth method | Effective mode |
+|---|---|
+| `~/.aws/credentials` / env keys | **Mint** (installer default) |
+| AWS SSO / LoginProvider | **Passthrough** |
+
+Override with `Passthrough`, `Manual`, or `Mint` if needed.
+
+---
+
+## Quick start (Azure IPI)
+
+Works with OpenEnv / RHPDS sandboxes using a service principal.
+
+1. Copy the example vars file:
+
+```bash
+cp vars/example-azure.yml vars/my-azure.yml
+```
+
+2. Export OpenEnv credentials (same shell as the playbook):
+
+```bash
+export GUID=shzmc
+export CLIENT_ID=...
+export PASSWORD=...          # service principal secret — never commit
+export TENANT=...
+export SUBSCRIPTION=...
+export RESOURCEGROUP=openenv-shzmc
+```
+
+3. Edit `vars/my-azure.yml` — at minimum set `cluster_name`, `azure_region`, and paths to pull secret / SSH key:
+
+```yaml
+platform: azure
+cluster_name: demo
+azure_region: northeurope          # must be in RHPDS allow-list (see below)
+azure_resource_group: openenv-shzmc
+pull_secret_file: "~/pull-secret.json"
+ssh_public_key_file: "~/.ssh/id_rsa.pub"
+```
+
+`base_domain` is optional if `GUID` is exported — it is auto-derived as `<guid>.azure.redhatworkshops.io`.
+
+4. Deploy:
+
+```bash
+ansible-playbook playbooks/deploy.yml -e @vars/my-azure.yml
+```
+
+5. Destroy:
+
+```bash
+ansible-playbook playbooks/destroy.yml -e @vars/my-azure.yml
+```
+
+### Azure required variables
+
+| Variable | Description |
+|---|---|
+| `platform` | `azure` |
+| `ocp_version` | OpenShift version, e.g. `4.22.6` |
+| `cluster_type` | `sno` \| `ha` \| `compact` |
+| `cluster_name` | Cluster name (DNS label) |
+| `base_domain` | Public DNS zone (e.g. `shzmc.azure.redhatworkshops.io`) |
+| `azure_region` | Cluster region (e.g. `northeurope`) |
+| `azure_resource_group` | RG containing the DNS zone (OpenEnv RG) |
+| `pull_secret_file` | Path to pull secret JSON |
+| `ssh_public_key_file` | Path to SSH **public** key |
+
+Credentials can be set via vars (`azure_client_id`, etc.) or environment:
+
+| Env var | Ansible var |
+|---|---|
+| `CLIENT_ID` | `azure_client_id` |
+| `PASSWORD` | `azure_client_secret` |
+| `TENANT` | `azure_tenant_id` |
+| `SUBSCRIPTION` | `azure_subscription_id` |
+| `RESOURCEGROUP` | `azure_resource_group` |
+| `GUID` | `azure_guid` (used to derive `base_domain`) |
+
+### Azure regions (RHPDS / OpenEnv)
+
+VM policy typically **allows**:
+
+`eastus`, `eastus2`, `westus`, `centralus`, `canadacentral`, `eastasia`, `northeurope`, `westeurope`
+
+Regions like `francecentral` are **blocked** (`RequestDisallowedByPolicy`). The playbook fails early if `azure_region` is outside the allow-list.
+
+### Azure resource groups
+
+Two different roles — do not confuse them:
+
+| Purpose | Variable | Notes |
+|---|---|---|
+| DNS zone | `azure_resource_group` / `RESOURCEGROUP` | OpenEnv RG (e.g. `openenv-shzmc`). Can be in a different region than the cluster. |
+| Cluster VMs | *(installer-created)* | Leave `azure_cluster_resource_group` empty. Installer creates a new empty RG in `azure_region`. |
+
+Do **not** point `azure_cluster_resource_group` at the OpenEnv/DNS RG — the installer requires an empty RG in the target region.
 
 ### Cluster types
 
@@ -77,11 +181,13 @@ ansible-playbook playbooks/destroy.yml -e @vars/my-cluster.yml
 ### How it works
 
 1. Detects the OS where Ansible runs (`linux` / `mac` / `windows`).
-2. Downloads and caches `openshift-install` for that OS + `ocp_version` under `~/.cache/ocp-cluster-lifecycle/`.
-3. Renders `install-config.yaml` for AWS IPI.
+2. Downloads and caches `openshift-install` for `cluster_architecture` (`x86_64` default) under `~/.cache/ocp-cluster-lifecycle/`.
+3. Renders `install-config.yaml` for the selected platform.
 4. Runs `openshift-install create cluster` or `destroy cluster` in `clusters/<cluster_name>/`.
 
-Secrets are never committed. Prefer file paths + AWS profiles, or Ansible Vault (`group_vars/all/vault.yml.example`).
+Use `playbooks/deploy.yml` or `playbooks/destroy.yml` to choose the action — do **not** set `ocp_lifecycle` in your vars file.
+
+Secrets are never committed. Prefer env vars or Ansible Vault (`inventory/group_vars/all/vault.yml.example`).
 
 ---
 
@@ -160,14 +266,15 @@ git push
 Never commit:
 
 - `pull-secret.json`
-- AWS access keys
-- `group_vars/all/vault.yml`
+- AWS / Azure credentials or service principal secrets
+- `inventory/group_vars/all/vault.yml`
 - Anything under `clusters/` (kubeconfigs and install metadata)
+- Local vars files like `vars/my-cluster.yml`, `vars/my-azure.yml`
 
 Those paths are listed in `.gitignore`.
 
 ## Roadmap
 
-- Azure IPI / GCP IPI
+- GCP IPI
 - UPI workflows per platform
 - Optional Ansible Vault examples with encrypted sample structure
