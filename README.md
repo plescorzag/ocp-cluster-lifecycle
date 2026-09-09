@@ -146,7 +146,7 @@ Credentials can be set via vars (`azure_client_id`, etc.) or environment:
 |---|---|
 | `CLIENT_ID` | `azure_client_id` |
 | `PASSWORD` | `azure_client_secret` |
-| `TENANT` | `azure_tenant_id` |
+| `TENANT` | `azure_tenant_id` (OpenEnv often gives a domain like `redhat0.onmicrosoft.com`; the playbook resolves it to a UUID) |
 | `SUBSCRIPTION` | `azure_subscription_id` |
 | `RESOURCEGROUP` | `azure_resource_group` |
 | `GUID` | `azure_guid` (used to derive `base_domain`) |

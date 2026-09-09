@@ -15,6 +15,9 @@ azure_rhpds_allowed_regions:
   - westeurope
 
 # Service principal (also readable from env: CLIENT_ID, PASSWORD, TENANT, SUBSCRIPTION, RESOURCEGROUP)
+# OpenEnv labels TENANT as "Tenant ID" but often gives a domain (e.g. redhat0.onmicrosoft.com).
+# The playbook resolves domains to a UUID for osServicePrincipal.json via az CLI.
+azure_tenant_uuid_regex: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
 azure_client_id: ""
 azure_client_secret: ""
 azure_tenant_id: ""

@@ -82,16 +82,18 @@
       - _azure_tenant_id | length > 0
       - _azure_subscription_id | length > 0
       - _azure_base_domain_rg | length > 0
-      - _azure_tenant_id is match('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
-      - _azure_subscription_id is match('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
+      - >-
+        (_azure_tenant_id is match(azure_tenant_uuid_regex))
+        or (_azure_tenant_id is search('\\.'))
+      - _azure_subscription_id is match(azure_tenant_uuid_regex)
     fail_msg: >-
       Missing or invalid Azure deploy inputs (set vars or export env in the SAME shell as ansible-playbook):
       azure_region={{ 'OK' if (azure_region | length > 0) else 'MISSING' }},
       base_domain={{ 'OK' if (base_domain | length > 0) else 'MISSING' }},
       client_id={{ 'OK' if (_azure_client_id | length > 0) else 'MISSING (CLIENT_ID / azure_client_id)' }},
       client_secret={{ 'OK' if (_azure_client_secret | length > 0) else 'MISSING (PASSWORD / azure_client_secret)' }},
-      tenant={{ 'OK' if (_azure_tenant_id is match('^[0-9a-fA-F-]{36}$')) else 'INVALID (TENANT must be a UUID, not a domain name)' }},
-      subscription={{ 'OK' if (_azure_subscription_id is match('^[0-9a-fA-F-]{36}$')) else 'INVALID (SUBSCRIPTION must be a UUID)' }},
+      tenant={{ 'OK' if ((_azure_tenant_id is match(azure_tenant_uuid_regex)) or (_azure_tenant_id is search('\\.'))) else 'INVALID (TENANT must be a UUID or Azure AD domain, e.g. redhat0.onmicrosoft.com from OpenEnv)' }},
+      subscription={{ 'OK' if (_azure_subscription_id is match(azure_tenant_uuid_regex)) else 'INVALID (SUBSCRIPTION must be a UUID)' }},
       resource_group={{ 'OK' if (_azure_base_domain_rg | length > 0) else 'MISSING (RESOURCEGROUP / azure_resource_group)' }}.
       Tip: add azure_resource_group: openenv-<guid> to vars/my-azure.yml, or:
       export RESOURCEGROUP=openenv-<guid>
@@ -122,6 +124,83 @@
       clusterRG={{ _azure_cluster_rg if (_azure_cluster_rg | length > 0) else '(installer creates new empty RG in azure_region)' }}
       guid={{ _azure_guid | default('') }}
 
+- name: Resolve tenant domain to UUID for installer auth
+  when: ocp_lifecycle in ['deploy', 'destroy']
+  block:
+    - name: Use tenant UUID when TENANT is already a GUID
+      when: _azure_tenant_id is match(azure_tenant_uuid_regex)
+      ansible.builtin.set_fact:
+        _azure_tenant_resolved: "{{ _azure_tenant_id }}"
+
+    - name: Resolve OpenEnv-style tenant domain to UUID via Azure CLI
+      when: not (_azure_tenant_id is match(azure_tenant_uuid_regex))
+      block:
+        - name: Check az CLI is available for tenant resolution
+          ansible.builtin.command:
+            argv: [az, version]
+          register: _azure_tenant_az_version
+          changed_when: false
+          failed_when: false
+
+        - name: Fail if az CLI missing for tenant resolution
+          when: _azure_tenant_az_version.rc != 0
+          ansible.builtin.fail:
+            msg: >-
+              Azure CLI (az) is required to resolve tenant domain
+              '{{ _azure_tenant_id }}' to a UUID for openshift-install.
+
+        - name: Login with service principal to resolve tenant
+          ansible.builtin.command:
+            argv:
+              - az
+              - login
+              - --service-principal
+              - -u
+              - "{{ _azure_client_id }}"
+              - -p
+              - "{{ _azure_client_secret }}"
+              - --tenant
+              - "{{ _azure_tenant_id }}"
+              - --output
+              - none
+          no_log: true
+          changed_when: false
+
+        - name: Read tenant UUID from az account
+          ansible.builtin.command:
+            argv:
+              - az
+              - account
+              - show
+              - --query
+              - tenantId
+              - -o
+              - tsv
+          register: _azure_tenant_resolved_cmd
+          changed_when: false
+
+        - name: Store resolved tenant UUID
+          ansible.builtin.set_fact:
+            _azure_tenant_resolved: "{{ _azure_tenant_resolved_cmd.stdout | trim }}"
+
+        - name: Fail if tenant domain could not be resolved
+          when: not (_azure_tenant_resolved is match(azure_tenant_uuid_regex))
+          ansible.builtin.fail:
+            msg: >-
+              Could not resolve tenant '{{ _azure_tenant_id }}' to a UUID.
+              Verify CLIENT_ID, PASSWORD, and TENANT from OpenEnv.
+
+    - name: Show resolved tenant UUID
+      when: ocp_lifecycle == 'deploy'
+      ansible.builtin.debug:
+        msg: >-
+          tenant input={{ _azure_tenant_id }}
+          tenant UUID for installer={{
+            _azure_tenant_resolved
+            if (_azure_tenant_id is match(azure_tenant_uuid_regex))
+            else (_azure_tenant_id ~ ' -> ' ~ _azure_tenant_resolved)
+          }}
+
 - name: Prepare Azure service principal auth for openshift-install
   when: ocp_lifecycle in ['deploy', 'destroy']
   block:
@@ -135,7 +214,7 @@
       when: >-
         (_azure_client_id | default('') | length > 0) and
         (_azure_client_secret | default('') | length > 0) and
-        (_azure_tenant_id | default('') | length > 0) and
+        (_azure_tenant_resolved | default('') | length > 0) and
         (_azure_subscription_id | default('') | length > 0)
       ansible.builtin.copy:
         dest: "{{ cluster_dir }}/.azure/osServicePrincipal.json"
@@ -145,7 +224,7 @@
             "subscriptionId": "{{ _azure_subscription_id }}",
             "clientId": "{{ _azure_client_id }}",
             "clientSecret": "{{ _azure_client_secret }}",
-            "tenantId": "{{ _azure_tenant_id }}"
+            "tenantId": "{{ _azure_tenant_resolved }}"
           }
       no_log: true
 
