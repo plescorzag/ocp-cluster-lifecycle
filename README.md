@@ -172,7 +172,7 @@ Do **not** point `azure_cluster_resource_group` at the OpenEnv/DNS RG — the in
 
 ### Azure service principal RBAC (OpenShift 4.16+ / 5.0)
 
-The installer uploads `bootstrap.ign` (and RHCOS VHDs) to Azure Blob Storage using **OAuth**, not storage account keys. The service principal needs a **data-plane** role such as **Storage Blob Data Contributor** (or **Storage Blob Data Owner**) on the subscription or cluster resource group — **Contributor** / **Owner** alone are not enough and produce:
+The installer uploads `bootstrap.ign` (and RHCOS VHDs) to Azure Blob Storage using **OAuth**, not storage account keys. The service principal needs a **data-plane** role such as **Storage Blob Data Contributor** (or **Storage Blob Data Owner**) on the subscription or cluster resource group. Azure **subscription Owner** / **Contributor** are separate from blob data roles and produce:
 
 `AuthorizationPermissionMismatch` on `PUT .../ignition/bootstrap.ign`
 

@@ -398,8 +398,10 @@
         msg: >-
           Service principal {{ _azure_client_id }} is missing a blob data-plane role
           ({{ azure_required_blob_data_roles | join(' or ') }}).
-          OpenShift 4.16+/5.0 Azure IPI uploads bootstrap.ign to blob storage using OAuth;
-          Contributor / Owner alone cause AuthorizationPermissionMismatch on PUT .../ignition/bootstrap.ign.
+          OpenShift 4.16+/5.0 Azure IPI uploads bootstrap.ign to blob storage using OAuth.
+          Subscription Owner / Contributor do NOT include blob data-plane write — you still need
+          Storage Blob Data Contributor (or Owner). Without it: AuthorizationPermissionMismatch
+          on PUT .../ignition/bootstrap.ign.
 
           Roles currently assigned to this SP:
           {{ (_azure_sp_roles.stdout_lines | default([]) | unique | sort | join(', '))
