@@ -16,17 +16,35 @@
     _azure_client_secret: "{{ azure_client_secret if (azure_client_secret | default('') | length > 0) else (lookup('env', 'PASSWORD') | default(lookup('env', 'AZURE_CLIENT_SECRET'), true) | default('', true)) }}"
     _azure_tenant_id: "{{ azure_tenant_id if (azure_tenant_id | default('') | length > 0) else (lookup('env', 'TENANT') | default(lookup('env', 'AZURE_TENANT_ID'), true) | default('', true)) }}"
     _azure_subscription_id: "{{ azure_subscription_id if (azure_subscription_id | default('') | length > 0) else (lookup('env', 'SUBSCRIPTION') | default(lookup('env', 'AZURE_SUBSCRIPTION_ID'), true) | default('', true)) }}"
-    _azure_resource_group: >-
-      {{
-        azure_resource_group if (azure_resource_group | default('') | length > 0)
-        else (
-          lookup('env', 'RESOURCEGROUP') | default(lookup('env', 'RESOURCE_GROUP'), true)
-          | default(lookup('env', 'AZURE_RESOURCE_GROUP'), true)
-          | default('', true)
-        )
-      }}
     _azure_guid: "{{ azure_guid if (azure_guid | default('') | length > 0) else (lookup('env', 'GUID') | default('', true)) }}"
   no_log: true
+
+- name: Resolve Azure DNS resource group from vars or environment
+  ansible.builtin.set_fact:
+    _azure_resource_group_from_env: >-
+      {{
+        lookup('env', 'RESOURCEGROUP') | default(lookup('env', 'RESOURCE_GROUP'), true)
+        | default(lookup('env', 'AZURE_RESOURCE_GROUP'), true)
+        | default('', true)
+      }}
+    # Ignore example placeholders (e.g. openenv-xxxx) so exported RESOURCEGROUP wins
+    _azure_resource_group_from_var: >-
+      {{
+        '' if (
+          azure_resource_group | default('') | length == 0
+          or (azure_resource_group | regex_search('xxxx', ignorecase=True))
+        )
+        else azure_resource_group
+      }}
+
+- name: Choose Azure DNS resource group
+  ansible.builtin.set_fact:
+    _azure_resource_group: >-
+      {{
+        _azure_resource_group_from_var
+        if (_azure_resource_group_from_var | length > 0)
+        else _azure_resource_group_from_env
+      }}
 
 - name: Resolve Azure resource group names
   ansible.builtin.set_fact:
@@ -64,14 +82,18 @@
       - _azure_tenant_id | length > 0
       - _azure_subscription_id | length > 0
       - _azure_base_domain_rg | length > 0
+      - >-
+        (_azure_tenant_id is match(azure_tenant_uuid_regex))
+        or (_azure_tenant_id is search('\\.'))
+      - _azure_subscription_id is match(azure_tenant_uuid_regex)
     fail_msg: >-
-      Missing Azure deploy inputs (set vars or export env in the SAME shell as ansible-playbook):
+      Missing or invalid Azure deploy inputs (set vars or export env in the SAME shell as ansible-playbook):
       azure_region={{ 'OK' if (azure_region | length > 0) else 'MISSING' }},
       base_domain={{ 'OK' if (base_domain | length > 0) else 'MISSING' }},
       client_id={{ 'OK' if (_azure_client_id | length > 0) else 'MISSING (CLIENT_ID / azure_client_id)' }},
       client_secret={{ 'OK' if (_azure_client_secret | length > 0) else 'MISSING (PASSWORD / azure_client_secret)' }},
-      tenant={{ 'OK' if (_azure_tenant_id | length > 0) else 'MISSING (TENANT / azure_tenant_id)' }},
-      subscription={{ 'OK' if (_azure_subscription_id | length > 0) else 'MISSING (SUBSCRIPTION / azure_subscription_id)' }},
+      tenant={{ 'OK' if ((_azure_tenant_id is match(azure_tenant_uuid_regex)) or (_azure_tenant_id is search('\\.'))) else 'INVALID (TENANT must be a UUID or Azure AD domain, e.g. redhat0.onmicrosoft.com from OpenEnv)' }},
+      subscription={{ 'OK' if (_azure_subscription_id is match(azure_tenant_uuid_regex)) else 'INVALID (SUBSCRIPTION must be a UUID)' }},
       resource_group={{ 'OK' if (_azure_base_domain_rg | length > 0) else 'MISSING (RESOURCEGROUP / azure_resource_group)' }}.
       Tip: add azure_resource_group: openenv-<guid> to vars/my-azure.yml, or:
       export RESOURCEGROUP=openenv-<guid>
@@ -102,6 +124,83 @@
       clusterRG={{ _azure_cluster_rg if (_azure_cluster_rg | length > 0) else '(installer creates new empty RG in azure_region)' }}
       guid={{ _azure_guid | default('') }}
 
+- name: Resolve tenant domain to UUID for installer auth
+  when: ocp_lifecycle in ['deploy', 'destroy']
+  block:
+    - name: Use tenant UUID when TENANT is already a GUID
+      when: _azure_tenant_id is match(azure_tenant_uuid_regex)
+      ansible.builtin.set_fact:
+        _azure_tenant_resolved: "{{ _azure_tenant_id }}"
+
+    - name: Resolve OpenEnv-style tenant domain to UUID via Azure CLI
+      when: not (_azure_tenant_id is match(azure_tenant_uuid_regex))
+      block:
+        - name: Check az CLI is available for tenant resolution
+          ansible.builtin.command:
+            argv: [az, version]
+          register: _azure_tenant_az_version
+          changed_when: false
+          failed_when: false
+
+        - name: Fail if az CLI missing for tenant resolution
+          when: _azure_tenant_az_version.rc != 0
+          ansible.builtin.fail:
+            msg: >-
+              Azure CLI (az) is required to resolve tenant domain
+              '{{ _azure_tenant_id }}' to a UUID for openshift-install.
+
+        - name: Login with service principal to resolve tenant
+          ansible.builtin.command:
+            argv:
+              - az
+              - login
+              - --service-principal
+              - -u
+              - "{{ _azure_client_id }}"
+              - -p
+              - "{{ _azure_client_secret }}"
+              - --tenant
+              - "{{ _azure_tenant_id }}"
+              - --output
+              - none
+          no_log: true
+          changed_when: false
+
+        - name: Read tenant UUID from az account
+          ansible.builtin.command:
+            argv:
+              - az
+              - account
+              - show
+              - --query
+              - tenantId
+              - -o
+              - tsv
+          register: _azure_tenant_resolved_cmd
+          changed_when: false
+
+        - name: Store resolved tenant UUID
+          ansible.builtin.set_fact:
+            _azure_tenant_resolved: "{{ _azure_tenant_resolved_cmd.stdout | trim }}"
+
+        - name: Fail if tenant domain could not be resolved
+          when: not (_azure_tenant_resolved is match(azure_tenant_uuid_regex))
+          ansible.builtin.fail:
+            msg: >-
+              Could not resolve tenant '{{ _azure_tenant_id }}' to a UUID.
+              Verify CLIENT_ID, PASSWORD, and TENANT from OpenEnv.
+
+    - name: Show resolved tenant UUID
+      when: ocp_lifecycle == 'deploy'
+      ansible.builtin.debug:
+        msg: >-
+          tenant input={{ _azure_tenant_id }}
+          tenant UUID for installer={{
+            _azure_tenant_resolved
+            if (_azure_tenant_id is match(azure_tenant_uuid_regex))
+            else (_azure_tenant_id ~ ' -> ' ~ _azure_tenant_resolved)
+          }}
+
 - name: Prepare Azure service principal auth for openshift-install
   when: ocp_lifecycle in ['deploy', 'destroy']
   block:
@@ -115,7 +214,7 @@
       when: >-
         (_azure_client_id | default('') | length > 0) and
         (_azure_client_secret | default('') | length > 0) and
-        (_azure_tenant_id | default('') | length > 0) and
+        (_azure_tenant_resolved | default('') | length > 0) and
         (_azure_subscription_id | default('') | length > 0)
       ansible.builtin.copy:
         dest: "{{ cluster_dir }}/.azure/osServicePrincipal.json"
@@ -125,7 +224,7 @@
             "subscriptionId": "{{ _azure_subscription_id }}",
             "clientId": "{{ _azure_client_id }}",
             "clientSecret": "{{ _azure_client_secret }}",
-            "tenantId": "{{ _azure_tenant_id }}"
+            "tenantId": "{{ _azure_tenant_resolved }}"
           }
       no_log: true
 
@@ -199,8 +298,13 @@
         msg: >-
           baseDomainResourceGroupName '{{ _azure_base_domain_rg }}' was not found
           in subscription {{ _azure_subscription_id }} (ResourceGroupNotFound).
+          {{ (
+            'Your vars file still has the example placeholder azure_resource_group: ' ~ azure_resource_group
+            ~ '. Remove that line or set the real OpenEnv name, or rely on export RESOURCEGROUP=openenv-<guid>. '
+          ) if (azure_resource_group | default('') | regex_search('xxxx', ignorecase=True)) else '' }}
           OpenEnv sandboxes expire; confirm the RG still exists and the SP can read it:
             az group show -n {{ _azure_base_domain_rg }} --subscription {{ _azure_subscription_id }}
+          Resolved from: var='{{ azure_resource_group | default('') }}' env RESOURCEGROUP='{{ _azure_resource_group_from_env | default('') }}'
           Detail: {{ _azure_rg_show.stderr | default(_azure_rg_show.stdout) }}
 
     - name: Verify public DNS zone exists for base_domain
@@ -263,6 +367,54 @@
           DNS preflight OK: RG={{ _azure_base_domain_rg }}
           ({{ (_azure_rg_show.stdout | from_json).location }})
           zone={{ base_domain }}
+
+    - name: List RBAC roles assigned to service principal
+      when: azure_blob_rbac_check | bool
+      ansible.builtin.command:
+        argv:
+          - az
+          - role
+          - assignment
+          - list
+          - --assignee
+          - "{{ _azure_client_id }}"
+          - --all
+          - --query
+          - "[].roleDefinitionName"
+          - -o
+          - tsv
+      register: _azure_sp_roles
+      changed_when: false
+      failed_when: false
+
+    - name: Fail if service principal lacks blob data-plane RBAC
+      when:
+        - azure_blob_rbac_check | bool
+        - (_azure_sp_roles.rc | default(1)) != 0
+          or (
+            (_azure_sp_roles.stdout_lines | default([]) | intersect(azure_required_blob_data_roles) | length) == 0
+          )
+      ansible.builtin.fail:
+        msg: >-
+          Service principal {{ _azure_client_id }} is missing a blob data-plane role
+          ({{ azure_required_blob_data_roles | join(' or ') }}).
+          OpenShift 4.16+/5.0 Azure IPI uploads bootstrap.ign to blob storage using OAuth.
+          Subscription Owner / Contributor do NOT include blob data-plane write — you still need
+          Storage Blob Data Contributor (or Owner). Without it: AuthorizationPermissionMismatch
+          on PUT .../ignition/bootstrap.ign.
+
+          Roles currently assigned to this SP:
+          {{ (_azure_sp_roles.stdout_lines | default([]) | unique | sort | join(', '))
+            if (_azure_sp_roles.rc | default(1) == 0 and (_azure_sp_roles.stdout_lines | default([]) | length > 0))
+            else '(none listed — SP may lack permission to read its own assignments)' }}.
+
+          If your subscription policy allows, grant (scope can be subscription or cluster RG):
+            az role assignment create --assignee {{ _azure_client_id }} \
+              --role "Storage Blob Data Contributor" \
+              --scope /subscriptions/{{ _azure_subscription_id }}
+
+          OpenEnv/RHPDS: you may need a workshop admin to add this role to the sandbox SP.
+          Set azure_blob_rbac_check: false to skip this preflight (install will still fail without the role).
 
 - name: Render install-config.yaml for Azure IPI
   when: ocp_lifecycle == 'deploy'
