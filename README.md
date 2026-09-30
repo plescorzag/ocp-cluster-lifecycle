@@ -122,9 +122,74 @@ az role assignment create \
 
 - Set `cluster_architecture: x86_64` (default) unless you intentionally deploy ARM nodes.
 - On Linux, `openshift-install` runs natively — no `arch -x86_64` wrapper.
-- On Apple Silicon Macs, the playbook downloads the **native arm64** `openshift-install` binary and uses `OPENSHIFT_INSTALL_RELEASE_IMAGE_OVERRIDE` for the cluster architecture (x86_64 by default). Rosetta is not required.
 - Export OpenEnv/Azure env vars in the **same shell** as `ansible-playbook`, or put values in `vars/my-azure.yml`.
 - Do not commit secrets; keep `vars/my-azure.yml` and `clusters/` out of git (see `.gitignore`).
+
+### macOS (Apple Silicon)
+
+The playbook downloads the **native arm64** `openshift-install` binary on Apple Silicon and sets `OPENSHIFT_INSTALL_RELEASE_IMAGE_OVERRIDE` for the cluster architecture (`x86_64` by default), so Rosetta is **not** required for the installer itself.
+
+#### `Bad CPU type in executable` after a macOS update
+
+Some macOS updates remove or leave Rosetta 2 uninstalled. Older tools installed under `/usr/local` (Intel / x86_64) then fail immediately with:
+
+```text
+arch: posix_spawnp: ... Bad CPU type in executable
+```
+
+or simply:
+
+```text
+zsh: bad CPU type in executable: aws
+```
+
+Common hits in this project:
+
+| Symptom | Cause |
+|---|---|
+| `openshift-install` via `arch -x86_64` fails | Cached **x86_64** Mac installer; Rosetta missing |
+| `AWS credentials are not available` with empty Detail | **x86_64** `aws` CLI (`/usr/local/bin/aws`) cannot run |
+
+Confirm with:
+
+```bash
+uname -m                                    # arm64 on Apple Silicon
+file "$(which aws)"                         # Mach-O ... x86_64  → needs fix
+file ~/.cache/ocp-cluster-lifecycle/*/mac-client-x86_64/openshift-install 2>/dev/null
+arch -x86_64 /usr/bin/true                  # fails if Rosetta is missing
+```
+
+#### Workarounds
+
+**1. Reinstall Rosetta** (quickest if you keep Intel binaries):
+
+```bash
+softwareupdate --install-rosetta --agree-to-license
+arch -x86_64 /usr/bin/true                  # should succeed
+aws --version
+aws sts get-caller-identity
+```
+
+**2. Prefer native arm64 tools** (recommended long-term):
+
+```bash
+# AWS CLI via Homebrew (arm64)
+brew install awscli
+hash -r
+which aws                                   # expect /opt/homebrew/bin/aws
+file "$(which aws)"                         # expect arm64
+aws sts get-caller-identity
+```
+
+For `openshift-install`, pull the latest playbooks (native arm64 client) and remove any old x86_64 cache:
+
+```bash
+git pull
+rm -rf ~/.cache/ocp-cluster-lifecycle/*/mac-client-x86_64
+ansible-playbook playbooks/deploy.yml -e @vars/my-cluster.yml
+```
+
+After that, the playbook should show `installer_client_arch=arm64` and download `openshift-install-mac-arm64-<version>.tar.gz`.
 
 ## Quick start (AWS IPI)
 

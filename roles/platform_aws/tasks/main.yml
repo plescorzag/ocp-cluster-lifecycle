@@ -53,9 +53,21 @@
         that:
           - _aws_identity.rc == 0
         fail_msg: >-
-          AWS credentials are not available. Set aws_profile or export
-          AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY (and ensure the aws CLI is installed).
-          Detail: {{ _aws_identity.stderr | default(_aws_identity.stdout) }}
+          AWS credentials probe failed (aws sts get-caller-identity).
+          {{
+            'Your aws CLI is an x86_64 binary and Rosetta is not installed (Bad CPU type in executable). '
+            ~ 'Fix with either: softwareupdate --install-rosetta --agree-to-license'
+            ~ '  OR install a native arm64 CLI: brew install awscli'
+            if ('Bad CPU type' in (_aws_identity.stderr | default(''))
+                or 'Bad CPU type' in (_aws_identity.msg | default(''))
+                or (_aws_identity.rc | default(0) != 0 and _aws_identity.stderr | default('') | length == 0
+                    and _aws_identity.stdout | default('') | length == 0))
+            else ''
+          }}
+          Otherwise set aws_profile or export AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY
+          (and ensure the aws CLI is installed and runnable).
+          Detail: {{ _aws_identity.stderr | default(_aws_identity.stdout) | default(_aws_identity.msg) | default('(empty)') }}
+          rc={{ _aws_identity.rc }}
 
     # Detect SSO vs static keys so both ~/.aws/credentials (Mint) and SSO (Passthrough) work
     - name: Detect AWS SSO configuration for profile
