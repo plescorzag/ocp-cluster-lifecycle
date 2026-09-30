@@ -17,30 +17,43 @@
       - _cluster_architecture in ['x86_64', 'arm64']
     fail_msg: "cluster_architecture must be 'x86_64' or 'arm64' (got '{{ _cluster_architecture }}')"
 
-# Client downloads follow the *cluster* architecture, not the Mac/Linux host CPU.
-# For x86_64 clusters that means:
-#   https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/<version>/
-- name: Map mirror clients path from cluster architecture
+# Installer *binary* follows the host CPU on macOS (native arm64 on Apple Silicon).
+# Cluster *payload* still follows cluster_architecture via OPENSHIFT_INSTALL_RELEASE_IMAGE_OVERRIDE.
+# That avoids requiring Rosetta to run an x86_64 Mac binary for x86_64 clusters.
+- name: Resolve installer client architecture (host-native on Mac)
   ansible.builtin.set_fact:
-    _mirror_arch: "{{ 'x86_64' if _cluster_architecture == 'x86_64' else 'aarch64' }}"
+    _installer_client_arch: >-
+      {{
+        'arm64'
+        if (installer_os == 'mac' and installer_arch == 'arm64')
+        else (
+          'x86_64'
+          if (installer_os == 'mac' and installer_arch == 'amd64')
+          else _cluster_architecture
+        )
+      }}
 
-- name: Resolve installer archive name for host OS + cluster architecture
+- name: Map mirror clients path from installer client architecture
+  ansible.builtin.set_fact:
+    _mirror_arch: "{{ 'x86_64' if _installer_client_arch == 'x86_64' else 'aarch64' }}"
+
+- name: Resolve installer archive name for host OS + client architecture
   ansible.builtin.set_fact:
     _installer_archive: >-
       {{
         'openshift-install-windows.zip' if installer_os == 'windows'
         else (
           'openshift-install-mac-' ~ ocp_version ~ '.tar.gz'
-          if (installer_os == 'mac' and _cluster_architecture == 'x86_64')
+          if (installer_os == 'mac' and _installer_client_arch == 'x86_64')
           else (
             'openshift-install-mac-arm64-' ~ ocp_version ~ '.tar.gz'
-            if (installer_os == 'mac' and _cluster_architecture == 'arm64')
+            if (installer_os == 'mac' and _installer_client_arch == 'arm64')
             else (
               'openshift-install-linux-' ~ ocp_version ~ '.tar.gz'
-              if (installer_os == 'linux' and _cluster_architecture == 'x86_64')
+              if (installer_os == 'linux' and _installer_client_arch == 'x86_64')
               else (
                 'openshift-install-linux-arm64-' ~ ocp_version ~ '.tar.gz'
-                if (installer_os == 'linux' and _cluster_architecture == 'arm64')
+                if (installer_os == 'linux' and _installer_client_arch == 'arm64')
                 else 'openshift-install-linux.tar.gz'
               )
             )
@@ -48,7 +61,7 @@
         )
       }}
     _installer_binary_name: "{{ 'openshift-install.exe' if installer_os == 'windows' else 'openshift-install' }}"
-    _installer_version_dir: "{{ installer_cache_dir }}/{{ ocp_version }}/{{ installer_os }}-client-{{ _cluster_architecture }}"
+    _installer_version_dir: "{{ installer_cache_dir }}/{{ ocp_version }}/{{ installer_os }}-client-{{ _installer_client_arch }}"
 
 - name: Set openshift-install binary path and download URL
   ansible.builtin.set_fact:
@@ -71,6 +84,7 @@
   ansible.builtin.debug:
     msg: >-
       cluster_architecture={{ _cluster_architecture }}
+      installer_client_arch={{ _installer_client_arch }}
       mirror={{ _mirror_arch }}/clients/ocp/{{ ocp_version }}/
       archive={{ _installer_archive }}
       url={{ _installer_url }}
@@ -119,21 +133,60 @@
         mode: "0755"
       when: installer_os != 'windows'
 
-# x86_64 mac binary on Apple Silicon needs Rosetta (arch -x86_64)
+# Prefer native arm64 binary on Apple Silicon. Only wrap with arch -x86_64 if an
+# x86_64 Mac client is still selected (requires Rosetta).
 - name: Build openshift-install command prefix
   ansible.builtin.set_fact:
     openshift_install_cmd: >-
       {{
         ['arch', '-x86_64', openshift_install_bin]
-        if (installer_os == 'mac' and installer_arch == 'arm64' and _cluster_architecture == 'x86_64')
+        if (installer_os == 'mac' and installer_arch == 'arm64' and _installer_client_arch == 'x86_64')
         else [openshift_install_bin]
       }}
+
+- name: Fail clearly if Rosetta is required but missing
+  when:
+    - installer_os == 'mac'
+    - installer_arch == 'arm64'
+    - _installer_client_arch == 'x86_64'
+  block:
+    - name: Probe Rosetta / x86_64 execution
+      ansible.builtin.command:
+        argv: [arch, -x86_64, /usr/bin/true]
+      register: _rosetta_probe
+      changed_when: false
+      failed_when: false
+
+    - name: Fail when Rosetta is not installed
+      when: _rosetta_probe.rc != 0
+      ansible.builtin.fail:
+        msg: >-
+          Apple Silicon needs Rosetta to run the x86_64 openshift-install binary
+          (Bad CPU type in executable). Install Rosetta:
+            softwareupdate --install-rosetta --agree-to-license
+          Or re-run after git pull — this project prefers the native arm64 Mac
+          installer and sets OPENSHIFT_INSTALL_RELEASE_IMAGE_OVERRIDE for the
+          cluster architecture (no Rosetta required).
 
 - name: Verify openshift-install binary
   ansible.builtin.command:
     argv: "{{ openshift_install_cmd + ['version'] }}"
   register: _installer_version
   changed_when: false
+  failed_when: false
+
+- name: Fail with guidance if installer version check fails
+  when: _installer_version.rc != 0
+  ansible.builtin.fail:
+    msg: >-
+      openshift-install version check failed (rc={{ _installer_version.rc }}):
+      {{ _installer_version.stderr | default(_installer_version.stdout) }}
+      {% if 'Bad CPU type' in (_installer_version.stderr | default('')) %}
+      Install Rosetta on Apple Silicon:
+        softwareupdate --install-rosetta --agree-to-license
+      Or remove the cached x86_64 binary and re-run so the arm64 client is used:
+        rm -rf {{ installer_cache_dir }}/{{ ocp_version }}/mac-client-x86_64
+      {% endif %}
 
 - name: Show installer version
   ansible.builtin.debug:

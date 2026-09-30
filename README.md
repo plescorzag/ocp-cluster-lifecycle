@@ -121,7 +121,8 @@ az role assignment create \
 #### Linux notes
 
 - Set `cluster_architecture: x86_64` (default) unless you intentionally deploy ARM nodes.
-- On Linux, `openshift-install` runs natively — no `arch -x86_64` wrapper (unlike Apple Silicon Macs).
+- On Linux, `openshift-install` runs natively — no `arch -x86_64` wrapper.
+- On Apple Silicon Macs, the playbook downloads the **native arm64** `openshift-install` binary and uses `OPENSHIFT_INSTALL_RELEASE_IMAGE_OVERRIDE` for the cluster architecture (x86_64 by default). Rosetta is not required.
 - Export OpenEnv/Azure env vars in the **same shell** as `ansible-playbook`, or put values in `vars/my-azure.yml`.
 - Do not commit secrets; keep `vars/my-azure.yml` and `clusters/` out of git (see `.gitignore`).
 
